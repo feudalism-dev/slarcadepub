@@ -11,6 +11,8 @@
   var leaderboardEl = document.getElementById("leaderboard");
   var messagesEl = document.getElementById("game-messages");
   var playerLine = document.getElementById("player-line");
+  var instructionsEl = document.getElementById("instructions");
+  var endHintEl = document.getElementById("end-hint");
 
   var W = canvas.width;
   var H = canvas.height;
@@ -271,7 +273,7 @@
     overlay.classList.remove("hidden");
     btnStart.textContent = "SESSION ENDING…";
     btnStart.disabled = true;
-    overlay.querySelector("p:nth-of-type(1)").textContent =
+    overlay.querySelector("#instructions").textContent =
       "Game Over — Score: " + score;
 
     SLArcade.submitScore(score)
@@ -284,7 +286,7 @@
         return refreshLeaderboard();
       })
       .then(function () {
-        overlay.querySelector("p:nth-of-type(2)").textContent =
+        endHintEl.textContent =
           "Click the arcade cabinet in-world to play again.";
         setTimeout(function () {
           SLArcade.endSession().catch(function () {});
@@ -314,7 +316,7 @@
     overlay.classList.add("hidden");
     btnStart.disabled = false;
     btnStart.textContent = "START";
-    overlay.querySelector("p:nth-of-type(1)").textContent =
+    instructionsEl.textContent =
       "Arrow keys or A/D to move. Space to fire.";
     showMessages([]);
   }

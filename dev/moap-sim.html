@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MOAP bootstrap simulator</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #111;
+        color: #ccc;
+        font-family: sans-serif;
+      }
+      #bar {
+        padding: 0.5rem 1rem;
+        background: #222;
+        border-bottom: 1px solid #444;
+        font-size: 0.85rem;
+      }
+      iframe {
+        border: 0;
+        width: 100%;
+        height: calc(100% - 40px);
+        display: block;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      Simulates SL MOAP bootstrap → iframe + postMessage (scores offline unless mock API
+      running)
+    </div>
+    <iframe id="game" title="game"></iframe>
+    <script>
+      (function () {
+        var gameUrl = "../games/invaders/";
+        var session = {
+          game: "invaders",
+          token: "devtoken123",
+          scores: false,
+          name: "Dev Resident",
+          avatar: "00000000-0000-0000-0000-000000000001",
+        };
+        var api = "";
+        var frame = document.getElementById("game");
+        frame.src = gameUrl;
+        frame.onload = function () {
+          frame.contentWindow.postMessage(
+            { type: "sl-session", session: session, api: api },
+            "*"
+          );
+        };
+      })();
+    </script>
+  </body>
+</html>
