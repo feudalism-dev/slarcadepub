@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>MOAP bootstrap simulator</title>
+    <title>MOAP URL simulator</title>
     <style>
       html,
       body {
@@ -28,35 +28,19 @@
     </style>
   </head>
   <body>
-    <div id="bar">
-      Simulates SL MOAP bootstrap → iframe + postMessage (scores offline unless mock API
-      running)
-    </div>
+    <div id="bar">Simulates SL MOAP direct load with sl_* query params (no data: bootstrap)</div>
     <iframe id="game" title="game"></iframe>
     <script>
       (function () {
-        var gameUrl = "../games/invaders/";
-        var session = {
-          game: "invaders",
-          token: "devtoken123",
-          scores: false,
-          name: "Dev Resident",
-          avatar: "00000000-0000-0000-0000-000000000001",
-        };
-        var api = "";
-        var frame = document.getElementById("game");
-        frame.src = gameUrl;
-        frame.onload = function () {
-          function send() {
-            frame.contentWindow.postMessage(
-              { type: "sl-session", session: session, api: api },
-              "*"
-            );
-          }
-          send();
-          setTimeout(send, 100);
-          setTimeout(send, 500);
-        };
+        var params = new URLSearchParams({
+          sl_game: "invaders",
+          sl_token: "devtoken123",
+          sl_scores: "0",
+          sl_name: "Dev Resident",
+          sl_avatar: "00000000-0000-0000-0000-000000000001",
+        });
+        document.getElementById("game").src =
+          "../games/invaders/?" + params.toString();
       })();
     </script>
   </body>

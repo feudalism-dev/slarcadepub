@@ -128,6 +128,42 @@
     return p;
   }
 
+  function readQueryParam(name) {
+    var search = global.location.search;
+    if (!search || search.length < 2) {
+      return "";
+    }
+    var key = name + "=";
+    var parts = search.substring(1).split("&");
+    var i;
+    for (i = 0; i < parts.length; i++) {
+      if (parts[i].indexOf(key) === 0) {
+        return decodeURIComponent(parts[i].substring(key.length).replace(/\+/g, " "));
+      }
+    }
+    return "";
+  }
+
+  function initFromMoapUrl() {
+    var cap = readQueryParam("sl_cap");
+    var game = readQueryParam("sl_game");
+    var token = readQueryParam("sl_token");
+    if (!cap && !game && !token) {
+      return false;
+    }
+    if (cap) {
+      setApiBase(cap);
+    }
+    setSession({
+      game: game,
+      token: token,
+      scores: readQueryParam("sl_scores") === "1",
+      name: readQueryParam("sl_name"),
+      avatar: readQueryParam("sl_avatar"),
+    });
+    return true;
+  }
+
   function listenForSession() {
     global.addEventListener("message", function (ev) {
       if (!ev.data || ev.data.type !== "sl-session") {
@@ -200,7 +236,9 @@
     getLeaderboard: getLeaderboard,
     submitScore: submitScore,
     endSession: endSession,
+    initFromMoapUrl: initFromMoapUrl,
   };
 
+  initFromMoapUrl();
   listenForSession();
 })(typeof window !== "undefined" ? window : globalThis);
