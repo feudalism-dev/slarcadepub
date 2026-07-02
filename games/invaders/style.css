@@ -14,15 +14,24 @@ body {
   font-family: "Segoe UI", Tahoma, sans-serif;
 }
 
+/* Viewport-locked shell — do not grow with sidebar content */
 #app {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: minmax(0, 1fr) min(260px, 28vw);
+  grid-template-rows: minmax(0, 1fr);
   width: 100%;
   height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
 }
 
 #game-wrap {
   position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
   background: #000;
 }
 
@@ -37,36 +46,42 @@ canvas {
 #overlay {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.72);
   text-align: center;
-  padding: 1rem;
+  padding: 0.75rem;
+  overflow-y: auto;
 }
 
 #overlay.hidden {
   display: none;
 }
 
+#overlay > div {
+  max-width: 28rem;
+}
+
 #overlay h1 {
   margin: 0 0 0.5rem;
-  font-size: 2rem;
-  letter-spacing: 0.15em;
+  font-size: clamp(1.25rem, 4vw, 2rem);
+  letter-spacing: 0.12em;
   color: #7cf57c;
   text-shadow: 0 0 12px #2f8;
 }
 
 #overlay p {
-  margin: 0.4rem 0;
-  max-width: 32rem;
+  margin: 0.35rem 0;
+  font-size: clamp(0.8rem, 2.2vw, 1rem);
   line-height: 1.4;
 }
 
 #overlay button {
-  margin-top: 1rem;
-  padding: 0.65rem 1.4rem;
-  font-size: 1rem;
+  margin-top: 0.75rem;
+  padding: 0.55rem 1.2rem;
+  font-size: clamp(0.85rem, 2.5vw, 1rem);
   border: 2px solid #7cf57c;
   background: #103010;
   color: #dfffdc;
@@ -78,35 +93,40 @@ canvas {
 }
 
 #sidebar {
-  padding: 0.75rem;
+  min-height: 0;
+  height: 100%;
+  padding: 0.6rem;
   background: linear-gradient(180deg, #101428, #080810);
   border-left: 1px solid #2a3555;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
 #sidebar h2 {
   margin: 0 0 0.5rem;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   letter-spacing: 0.08em;
   color: #9ad0ff;
 }
 
 .personal-score {
-  margin-bottom: 0.75rem;
-  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 0.45rem;
   background: #141a2a;
   border: 1px solid #2f3f66;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
 }
 
 #scores-unavailable {
-  margin-bottom: 0.75rem;
-  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 0.45rem;
   background: #2a1810;
   border: 1px solid #66442f;
   color: #ffcc99;
-  font-size: 0.78rem;
-  line-height: 1.35;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  max-height: 9rem;
+  overflow-y: auto;
 }
 
 #scores-unavailable.hidden {
@@ -117,14 +137,14 @@ canvas {
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 #leaderboard li {
   display: grid;
-  grid-template-columns: 1.6rem 1fr auto;
-  gap: 0.35rem;
-  padding: 0.25rem 0;
+  grid-template-columns: 1.4rem 1fr auto;
+  gap: 0.25rem;
+  padding: 0.2rem 0;
   border-bottom: 1px solid #1e2640;
 }
 
@@ -138,22 +158,37 @@ canvas {
 }
 
 #game-messages {
-  margin-top: 0.75rem;
-  min-height: 3rem;
+  margin-top: 0.5rem;
+  min-height: 2rem;
 }
 
 .msg {
   margin: 0.2rem 0;
   color: #ffd27c;
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
 }
 
 #hud {
   position: absolute;
   top: 8px;
   left: 8px;
-  font-size: 0.9rem;
+  z-index: 1;
+  font-size: 0.85rem;
   text-shadow: 0 0 4px #000;
   pointer-events: none;
+}
+
+/* Short or portrait windows: stack leaderboard under game */
+@media (max-aspect-ratio: 4/5), (max-height: 520px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  #sidebar {
+    max-height: 38vh;
+    border-left: none;
+    border-top: 1px solid #2a3555;
+  }
 }
