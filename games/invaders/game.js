@@ -90,12 +90,18 @@
     for (i = 0; i < entries.length; i++) {
       var e = entries[i];
       var li = document.createElement("li");
-      li.innerHTML =
-        '<span class="rank">' +
-        e.rank +
-        '.</span><span class="name"></span><span class="score"></span>';
-      li.querySelector(".name").textContent = e.name;
-      li.querySelector(".score").textContent = String(e.score);
+      var rankSpan = document.createElement("span");
+      var nameSpan = document.createElement("span");
+      var scoreSpan = document.createElement("span");
+      rankSpan.className = "rank";
+      nameSpan.className = "name";
+      scoreSpan.className = "score";
+      rankSpan.textContent = String(e.rank) + ".";
+      nameSpan.textContent = e.name;
+      scoreSpan.textContent = String(e.score);
+      li.appendChild(rankSpan);
+      li.appendChild(nameSpan);
+      li.appendChild(scoreSpan);
       leaderboardEl.appendChild(li);
     }
     if (!entries.length) {
@@ -339,6 +345,10 @@
   });
 
   btnStart.addEventListener("click", startGame);
+  btnStart.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    startGame();
+  });
 
   window.addEventListener("message", function () {
     syncPlayerLine();
