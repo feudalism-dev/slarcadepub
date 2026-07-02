@@ -526,7 +526,11 @@
       "You have " +
       lives +
       (lives === 1 ? " life" : " lives") +
-      " remaining.";
+      " remaining. Score " +
+      score +
+      " — Level " +
+      level +
+      ". Same wave picks up where you left off.";
     btnStart.textContent = "CONTINUE";
     btnStart.disabled = false;
     setOverlayButtons(true, false);
@@ -544,7 +548,10 @@
     }
     clearContinueTimer();
     playerInvuln = RESPAWN_FRAMES;
-    beginReadyCountdown("GET READY!", "Back in the fight!");
+    beginReadyCountdown(
+      "GET READY!",
+      "Level " + level + ", score " + score + " — invaders hold their positions."
+    );
     readyTimer = RESPAWN_FRAMES;
   }
   function showLevelComplete() {
