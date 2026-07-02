@@ -93,7 +93,7 @@
       li.innerHTML =
         '<span class="rank">' +
         e.rank +
-        ".</span><span class="name"></span><span class="score"></span>";
+        '.</span><span class="name"></span><span class="score"></span>';
       li.querySelector(".name").textContent = e.name;
       li.querySelector(".score").textContent = String(e.score);
       leaderboardEl.appendChild(li);
