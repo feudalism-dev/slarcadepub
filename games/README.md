@@ -10,6 +10,7 @@ https://feudalism-dev.github.io/slarcadepub/games/<id>/
 
 1. **Create** `games/<id>/` with at minimum:
    - `index.html`
+   - `game.json` — `{ "id": "<id>", "title": "..." }` (must match folder name and LSL `GAME_ID`)
    - game scripts and styles
    - `<script src="../../shared/sl-api.js"></script>` in `index.html`
 
@@ -34,12 +35,19 @@ https://feudalism-dev.github.io/slarcadepub/games/<id>/
    string GAME_TITLE = "My Game";
    ```
 
-5. **Use shared API** in your game:
+5. **Use shared API** in your game — register the same id as LSL `GAME_ID` / `game.json`:
    ```javascript
+   SLArcade.registerGameId("mygame"); // first line of your game script
    SLArcade.getLeaderboard().then(renderBoard);
    SLArcade.submitScore(finalScore).then(showResults);
    SLArcade.endSession(); // when done
    ```
+
+   Scores are stored per game in Experience KV:
+   - `<id>_top10` — that game's global top 10 only
+   - `<id>_personal_<avatar-uuid>` — that player's best for that game only
+
+   Invaders and a future pinball game never share the same leaderboard keys.
 
 ## Hub picker (later)
 

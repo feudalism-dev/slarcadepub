@@ -19,6 +19,7 @@
   var urlSeedPersonal = -1;
   var urlSeedHigh = -1;
   var hudMode = false;
+  var localGameId = "";
 
   function parseSeedInt(raw) {
     if (raw === "" || raw === undefined || raw === null) {
@@ -43,11 +44,44 @@
     }
     return {
       ok: true,
+      game: resolveGameId(),
       scoresEnabled: true,
       personalScore: urlSeedPersonal > 0 ? urlSeedPersonal : 0,
       entries: entries,
       unavailableMessage: "",
     };
+  }
+
+  function resolveGameId() {
+    if (session.game) {
+      return session.game;
+    }
+    return localGameId;
+  }
+
+  function gameIdMismatch() {
+    return !!(localGameId && session.game && localGameId !== session.game);
+  }
+
+  function scoresForThisGame() {
+    if (!session.scores) {
+      return false;
+    }
+    if (!resolveGameId()) {
+      return false;
+    }
+    if (gameIdMismatch()) {
+      return false;
+    }
+    return true;
+  }
+
+  function registerGameId(id) {
+    localGameId = id || "";
+  }
+
+  function getGameId() {
+    return resolveGameId();
   }
 
   function validCallbackName(name) {
@@ -151,7 +185,7 @@
   }
 
   function apiParams(extra) {
-    var p = { game: session.game };
+    var p = { game: resolveGameId() };
     var key;
     for (key in extra) {
       if (Object.prototype.hasOwnProperty.call(extra, key)) {
@@ -224,11 +258,32 @@
 
   function getLeaderboard() {
     if (!apiBase) {
-      if (session.scores) {
+      if (scoresForThisGame()) {
         return Promise.resolve(leaderboardFromUrlSeed());
       }
       return Promise.resolve({
         ok: true,
+        game: resolveGameId(),
+        scoresEnabled: false,
+        personalScore: 0,
+        entries: [],
+        unavailableMessage: SCORES_UNAVAILABLE_MSG,
+      });
+    }
+    if (!resolveGameId()) {
+      return Promise.resolve({
+        ok: false,
+        error: "no_game",
+        scoresEnabled: false,
+        personalScore: 0,
+        entries: [],
+        unavailableMessage: SCORES_UNAVAILABLE_MSG,
+      });
+    }
+    if (gameIdMismatch()) {
+      return Promise.resolve({
+        ok: false,
+        error: "game_mismatch",
         scoresEnabled: false,
         personalScore: 0,
         entries: [],
@@ -240,9 +295,10 @@
 
   function submitScore(score) {
     if (!apiBase) {
-      if (session.scores) {
+      if (scoresForThisGame()) {
         return Promise.resolve({
           ok: true,
+          game: resolveGameId(),
           saved: false,
           scoresEnabled: true,
           messages: [],
@@ -251,6 +307,16 @@
       }
       return Promise.resolve({
         ok: true,
+        saved: false,
+        scoresEnabled: false,
+        messages: [],
+        unavailableMessage: SCORES_UNAVAILABLE_MSG,
+      });
+    }
+    if (!resolveGameId() || gameIdMismatch()) {
+      return Promise.resolve({
+        ok: false,
+        error: gameIdMismatch() ? "game_mismatch" : "no_game",
         saved: false,
         scoresEnabled: false,
         messages: [],
@@ -289,6 +355,8 @@
     setApiBase: setApiBase,
     getSession: getSession,
     getApiBase: getApiBase,
+    registerGameId: registerGameId,
+    getGameId: getGameId,
     isHudMode: isHudMode,
     canEndSession: canEndSession,
     getLeaderboard: getLeaderboard,
