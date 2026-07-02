@@ -18,6 +18,7 @@
   var apiBase = "";
   var urlSeedPersonal = -1;
   var urlSeedHigh = -1;
+  var hudMode = false;
 
   function parseSeedInt(raw) {
     if (raw === "" || raw === undefined || raw === null) {
@@ -195,7 +196,16 @@
     });
     urlSeedPersonal = parseSeedInt(readQueryParam("sl_personal"));
     urlSeedHigh = parseSeedInt(readQueryParam("sl_high"));
+    hudMode = readQueryParam("sl_hud") === "1";
     return true;
+  }
+
+  function isHudMode() {
+    return hudMode;
+  }
+
+  function canEndSession() {
+    return !!(apiBase && session.token);
   }
 
   function listenForSession() {
@@ -279,6 +289,8 @@
     setApiBase: setApiBase,
     getSession: getSession,
     getApiBase: getApiBase,
+    isHudMode: isHudMode,
+    canEndSession: canEndSession,
     getLeaderboard: getLeaderboard,
     submitScore: submitScore,
     endSession: endSession,

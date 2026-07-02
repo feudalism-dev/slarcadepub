@@ -644,11 +644,36 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "GAME OVER";
     instructionsEl.textContent = "Final score: " + score;
-    btnStart.textContent = "SESSION ENDING…";
+    btnStart.textContent = "SAVING…";
     btnStart.disabled = true;
     setOverlayButtons(true, false);
     setStartScreenExtras(false);
     setQuitVisible(false);
+
+    var hudMode = SLArcade.isHudMode();
+    var canEnd = SLArcade.canEndSession() && !hudMode;
+    var recoveryTimer = setTimeout(function () {
+      if (phase === PHASE_OVER && btnStart.disabled) {
+        enablePlayAgain("Tap PLAY AGAIN to continue.");
+      }
+    }, 8000);
+
+    function finishGameOver() {
+      clearTimeout(recoveryTimer);
+      if (canEnd) {
+        btnStart.textContent = "SESSION ENDING…";
+        btnStart.disabled = true;
+        endHintEl.textContent =
+          "Click the arcade cabinet in-world to play again.";
+        setTimeout(function () {
+          SLArcade.endSession().catch(function () {
+            enablePlayAgain("Session could not end — tap PLAY AGAIN.");
+          });
+        }, 2000);
+        return;
+      }
+      enablePlayAgain("Tap PLAY AGAIN for another round.");
+    }
 
     SLArcade.submitScore(score)
       .then(function (result) {
@@ -659,20 +684,19 @@
         }
         return refreshLeaderboard();
       })
-      .then(function () {
-        endHintEl.textContent =
-          "Click the arcade cabinet in-world to play again.";
-        setTimeout(function () {
-          SLArcade.endSession().catch(function () {});
-        }, 6000);
-      })
+      .then(finishGameOver)
       .catch(function () {
+        clearTimeout(recoveryTimer);
         unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
         unavailableEl.classList.remove("hidden");
-        setTimeout(function () {
-          SLArcade.endSession().catch(function () {});
-        }, 6000);
+        enablePlayAgain("Score save timed out — you can still play again.");
       });
+  }
+
+  function enablePlayAgain(hint) {
+    btnStart.textContent = "PLAY AGAIN";
+    btnStart.disabled = false;
+    endHintEl.textContent = hint || "Tap PLAY AGAIN for another round.";
   }
 
   function startLevelAfterReady(title, hint) {
