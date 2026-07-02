@@ -55,6 +55,13 @@
   };
   spriteSheet.src = atlas.sheet;
 
+  var bgImage = new Image();
+  var bgReady = false;
+  bgImage.onload = function () {
+    bgReady = true;
+  };
+  bgImage.src = "background.jpg";
+
   var ROW_POINTS = [30, 20, 20, 10];
   var INVADER_DISPLAY = [
     { w: 44, h: 36 },
@@ -423,15 +430,26 @@
     drawSpriteCentered(src, W / 2, H * 0.38, 120, 130);
   }
 
-  function draw() {
-    ctx.fillStyle = "#020208";
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.fillStyle = "rgba(80, 120, 255, 0.08)";
-    var star;
-    for (star = 0; star < 40; star++) {
-      ctx.fillRect((star * 97) % W, (star * 53 + frame) % H, 2, 2);
+  function drawBackground() {
+    if (!bgReady) {
+      ctx.fillStyle = "#020208";
+      ctx.fillRect(0, 0, W, H);
+      return;
     }
+    var iw = bgImage.width;
+    var ih = bgImage.height;
+    var scale = Math.max(W / iw, H / ih);
+    var dw = iw * scale;
+    var dh = ih * scale;
+    var dx = (W - dw) / 2;
+    var dy = (H - dh) / 2;
+    ctx.drawImage(bgImage, dx, dy, dw, dh);
+    ctx.fillStyle = "rgba(0, 8, 24, 0.18)";
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function draw() {
+    drawBackground();
 
     var i;
     for (i = 0; i < invaders.length; i++) {
