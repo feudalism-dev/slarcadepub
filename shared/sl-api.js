@@ -242,6 +242,30 @@
     return !!(apiBase && session.token);
   }
 
+  function isPendingMoapSave() {
+    return readQueryParam("sl_submit") !== "" && readQueryParam("sl_token") !== "";
+  }
+
+  function submitScoreViaMoapUrl(score) {
+    var href = global.location.href;
+    var q = href.indexOf("?");
+    var base = q >= 0 ? href.substring(0, q) : href;
+    var params = new URLSearchParams(q >= 0 ? href.substring(q + 1) : "");
+    params.delete("sl_submit");
+    params.set("sl_submit", String(score));
+    params.set("sl_token", session.token);
+    global.location.replace(base + "?" + params.toString());
+    return Promise.resolve({
+      ok: true,
+      pendingMoapReport: true,
+      game: resolveGameId(),
+      saved: false,
+      scoresEnabled: true,
+      messages: [],
+      unavailableMessage: "",
+    });
+  }
+
   function listenForSession() {
     global.addEventListener("message", function (ev) {
       if (!ev.data || ev.data.type !== "sl-session") {
@@ -295,6 +319,9 @@
 
   function submitScore(score) {
     if (!apiBase) {
+      if (scoresForThisGame() && session.token) {
+        return submitScoreViaMoapUrl(score);
+      }
       if (scoresForThisGame()) {
         return Promise.resolve({
           ok: true,
@@ -358,6 +385,7 @@
     registerGameId: registerGameId,
     getGameId: getGameId,
     isHudMode: isHudMode,
+    isPendingMoapSave: isPendingMoapSave,
     canEndSession: canEndSession,
     getLeaderboard: getLeaderboard,
     submitScore: submitScore,

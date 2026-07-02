@@ -397,6 +397,20 @@
     btnQuit.classList.toggle("hidden", !visible);
   }
 
+  function showPendingSaveOverlay() {
+    phase = PHASE_OVER;
+    running = false;
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = "SAVING SCORE";
+    instructionsEl.textContent = "Writing your score to the leaderboard…";
+    endHintEl.textContent = "This only takes a moment.";
+    btnStart.textContent = "PLEASE WAIT…";
+    btnStart.disabled = true;
+    setOverlayButtons(true, false);
+    setStartScreenExtras(false);
+    setQuitVisible(false);
+  }
+
   function showMenuOverlay() {
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL INVADERS";
@@ -735,6 +749,9 @@
 
     SLArcade.submitScore(score)
       .then(function (result) {
+        if (result && result.pendingMoapReport) {
+          return;
+        }
         showMessages(result.messages || []);
         if (result.unavailableMessage) {
           unavailableEl.textContent = result.unavailableMessage;
@@ -860,6 +877,10 @@
 
   syncPlayerLine();
   refreshLeaderboard();
-  showMenuOverlay();
+  if (SLArcade.isPendingMoapSave()) {
+    showPendingSaveOverlay();
+  } else {
+    showMenuOverlay();
+  }
   requestAnimationFrame(loop);
 })();
