@@ -12,6 +12,9 @@ body {
   background: #020208;
   color: #e8f4ff;
   font-family: "Segoe UI", Tahoma, sans-serif;
+  /* SL MOAP CEF: lock to the visible media viewport (avoid 100dvh overflow). */
+  position: fixed;
+  inset: 0;
 }
 
 /* Viewport-locked shell — do not grow with sidebar content */
@@ -19,10 +22,10 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) min(260px, 28vw);
   grid-template-rows: minmax(0, 1fr);
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
-  height: 100dvh;
-  max-height: 100dvh;
   overflow: hidden;
 }
 
