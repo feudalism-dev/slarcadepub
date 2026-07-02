@@ -40,20 +40,12 @@
   var readyTimer = 0;
   var animFrame = 0;
 
-  var player = { x: W / 2 - 40, y: H - 56, w: 80, h: 60, speed: 5 };
+  var player = { x: W / 2 - 22, y: H - 52, w: 44, h: 28, speed: 5 };
   var bullets = [];
   var invaders = [];
   var invaderDir = 1;
   var invaderSpeed = 0.35;
   var invaderDrop = 18;
-
-  var atlas = window.InvadersSprites;
-  var spriteSheet = new Image();
-  var spritesReady = false;
-  spriteSheet.onload = function () {
-    spritesReady = true;
-  };
-  spriteSheet.src = atlas.sheet;
 
   var bgImage = new Image();
   var bgReady = false;
@@ -63,38 +55,176 @@
   bgImage.src = "background.jpg";
 
   var ROW_POINTS = [30, 20, 20, 10];
-  var INVADER_DISPLAY = [
-    { w: 44, h: 36 },
-    { w: 48, h: 40 },
-    { w: 52, h: 44 },
-    { w: 56, h: 48 },
+  var INVADER_PIXEL = [3, 3, 3, 3];
+
+  // SL Starfighter — compact wedge (11×8)
+  var PLAYER_SHIP = [
+    [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+    [0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+    [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+    [0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0],
   ];
-  var PLAYER_DISPLAY = { w: 80, h: 60 };
 
-  function invaderTypeForRow(row) {
-    return row;
-  }
+  // Row 0 — Prism Drone: floating crystal (not crab-shaped)
+  var ALIEN_PRISM = [
+    [
+      [0, 0, 1, 0, 0, 1, 0, 0, 0],
+      [0, 1, 1, 1, 1, 1, 1, 0, 0],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1],
+      [0, 1, 1, 1, 1, 1, 1, 0, 0],
+      [0, 0, 1, 0, 1, 0, 1, 0, 0],
+      [0, 1, 0, 0, 0, 0, 0, 1, 0],
+    ],
+    [
+      [0, 0, 1, 0, 0, 1, 0, 0, 0],
+      [0, 1, 1, 1, 1, 1, 1, 0, 0],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1],
+      [0, 1, 1, 1, 1, 1, 1, 0, 0],
+      [1, 0, 0, 1, 0, 1, 0, 0, 1],
+      [0, 0, 1, 0, 0, 0, 1, 0, 0],
+    ],
+  ];
 
-  function invaderSprite(row, frame, color) {
-    var i;
-    for (i = 0; i < atlas.invaders.length; i++) {
-      var s = atlas.invaders[i];
-      if (s.row === row && s.frame === frame && s.color === color) {
-        return s;
+  // Row 1 — Bolt Mite: asymmetric zig-scanner
+  var ALIEN_BOLT = [
+    [
+      [0, 0, 0, 1, 1, 1, 0, 0, 0, 0],
+      [0, 0, 1, 1, 0, 1, 1, 0, 0, 0],
+      [0, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1, 0],
+      [0, 1, 1, 0, 0, 0, 1, 1, 0, 0],
+      [0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+      [0, 1, 0, 0, 0, 0, 0, 1, 0, 0],
+    ],
+    [
+      [0, 0, 0, 1, 1, 1, 0, 0, 0, 0],
+      [0, 0, 1, 1, 0, 1, 1, 0, 0, 0],
+      [0, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1, 0],
+      [0, 0, 1, 1, 0, 0, 1, 1, 0, 0],
+      [0, 1, 0, 0, 0, 0, 0, 1, 0, 0],
+      [0, 0, 0, 1, 0, 1, 0, 0, 0, 0],
+    ],
+  ];
+
+  // Row 2 — Void Jelly: bell body with dangling tendrils
+  var ALIEN_JELLY = [
+    [
+      [0, 0, 0, 1, 1, 1, 0, 0, 0],
+      [0, 0, 1, 1, 1, 1, 1, 0, 0],
+      [0, 1, 1, 0, 1, 0, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [0, 1, 0, 1, 0, 1, 0, 1, 0],
+      [0, 0, 1, 0, 0, 0, 1, 0, 0],
+      [0, 1, 0, 0, 0, 0, 0, 1, 0],
+      [1, 0, 0, 0, 0, 0, 0, 0, 1],
+    ],
+    [
+      [0, 0, 0, 1, 1, 1, 0, 0, 0],
+      [0, 0, 1, 1, 1, 1, 1, 0, 0],
+      [0, 1, 1, 0, 1, 0, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [0, 0, 1, 0, 1, 0, 1, 0, 0],
+      [0, 1, 0, 1, 0, 1, 0, 1, 0],
+      [1, 0, 0, 0, 0, 0, 0, 0, 1],
+      [0, 0, 1, 0, 0, 0, 1, 0, 0],
+    ],
+  ];
+
+  // Row 3 — Hex Warden: wide armored hex (slow heavy row)
+  var ALIEN_HEX = [
+    [
+      [0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0],
+      [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+      [0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0],
+      [0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+    ],
+    [
+      [0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0],
+      [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+      [0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 0],
+      [0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0],
+      [0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0],
+    ],
+  ];
+
+  var ALIEN_SETS = [ALIEN_PRISM, ALIEN_BOLT, ALIEN_JELLY, ALIEN_HEX];
+
+  function drawPixelSprite(matrix, x, y, pixelSize, color) {
+    var r;
+    var c;
+    ctx.fillStyle = color;
+    for (r = 0; r < matrix.length; r++) {
+      for (c = 0; c < matrix[r].length; c++) {
+        if (matrix[r][c] === 1) {
+          ctx.fillRect(x + c * pixelSize, y + r * pixelSize, pixelSize, pixelSize);
+        }
       }
     }
-    return atlas.invaders[0];
   }
 
-  function drawSprite(src, dx, dy, dw, dh) {
-    if (!spritesReady || !src) {
-      return;
+  function pixelSpriteSize(matrix, pixelSize) {
+    var maxW = 0;
+    var i;
+    for (i = 0; i < matrix.length; i++) {
+      if (matrix[i].length > maxW) {
+        maxW = matrix[i].length;
+      }
     }
-    ctx.drawImage(spriteSheet, src.x, src.y, src.w, src.h, dx, dy, dw, dh);
+    return { w: maxW * pixelSize, h: matrix.length * pixelSize };
   }
 
-  function drawSpriteCentered(src, cx, cy, dw, dh) {
-    drawSprite(src, cx - dw / 2, cy - dh / 2, dw, dh);
+  function drawPixelSpriteCentered(matrix, cx, cy, pixelSize, color) {
+    var size = pixelSpriteSize(matrix, pixelSize);
+    drawPixelSprite(
+      matrix,
+      cx - size.w / 2,
+      cy - size.h / 2,
+      pixelSize,
+      color
+    );
+  }
+
+  function alienFrames(type) {
+    return ALIEN_SETS[type] || ALIEN_PRISM;
+  }
+
+  function invaderSpriteSize(type) {
+    var px = INVADER_PIXEL[type] || 3;
+    var frames = alienFrames(type);
+    return pixelSpriteSize(frames[0], px);
+  }
+
+  function clamp01(v) {
+    if (v < 0) {
+      return 0;
+    }
+    if (v > 1) {
+      return 1;
+    }
+    return v;
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function invaderColor(inv) {
+    var typeHue = [165, 200, 280, 32];
+    var baseHue = typeHue[inv.type] || 200;
+    var danger = clamp01((inv.y - 40) / (player.y - 120));
+    var hue = lerp(baseHue, 6, danger * 0.85);
+    var sat = lerp(70, 95, danger);
+    var light = lerp(58, 46, danger * 0.4);
+    return "hsl(" + Math.round(hue) + "," + Math.round(sat) + "%," + Math.round(light) + "%)";
   }
 
   function initInvaders() {
@@ -102,16 +232,16 @@
     var row;
     var col;
     for (row = 0; row < 4; row++) {
-      var disp = INVADER_DISPLAY[row];
+      var size = invaderSpriteSize(row);
       for (col = 0; col < 10; col++) {
         invaders.push({
           x: 48 + col * 56,
           y: 48 + row * 44,
-          w: disp.w,
-          h: disp.h,
+          w: size.w,
+          h: size.h,
           alive: true,
           row: row,
-          type: invaderTypeForRow(row),
+          type: row,
         });
       }
     }
@@ -381,53 +511,28 @@
   }
 
   function drawPlayerShip() {
-    var frameIdx = Math.floor(animFrame / 40) % 2;
-    var src = atlas.player[frameIdx] || atlas.player[0];
     var cx = player.x + player.w / 2;
     var cy = player.y + player.h / 2;
-    drawSpriteCentered(src, cx, cy, PLAYER_DISPLAY.w, PLAYER_DISPLAY.h);
+    drawPixelSpriteCentered(PLAYER_SHIP, cx, cy, 4, "#6f9");
+    ctx.fillStyle = "#9fd";
+    ctx.fillRect(cx - 1, player.y - 5, 2, 4);
   }
 
   function drawInvader(inv) {
+    var frames = alienFrames(inv.type);
     var frameIdx = Math.floor(animFrame / 28) % 2;
-    var src = invaderSprite(inv.type, frameIdx, 0);
+    var matrix = frames[frameIdx];
+    var px = INVADER_PIXEL[inv.type] || 3;
     var cx = inv.x + inv.w / 2;
     var cy = inv.y + inv.h / 2;
-    drawSpriteCentered(src, cx, cy, inv.w, inv.h);
+    drawPixelSpriteCentered(matrix, cx, cy, px, invaderColor(inv));
   }
 
   function drawBullet(b) {
-    if (!spritesReady) {
-      ctx.fillStyle = "#8cf";
-      ctx.fillRect(b.x, b.y, b.w, b.h);
-      return;
-    }
-    var src = atlas.bullet;
-    var cx = b.x + b.w / 2;
-    var cy = b.y + b.h / 2;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-Math.PI / 2);
-    ctx.drawImage(
-      spriteSheet,
-      src.x,
-      src.y,
-      src.w,
-      src.h,
-      -8,
-      -src.w * 0.45,
-      16,
-      src.w * 0.9
-    );
-    ctx.restore();
-  }
-
-  function drawOverlayBadge(kind) {
-    var src = kind === "level" ? atlas.levelComplete : atlas.gameOver;
-    if (!spritesReady || !src) {
-      return;
-    }
-    drawSpriteCentered(src, W / 2, H * 0.38, 120, 130);
+    ctx.fillStyle = "#8ef";
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(b.x + 1, b.y + 2, b.w - 2, b.h - 4);
   }
 
   function drawBackground() {
@@ -465,12 +570,6 @@
     ctx.fillStyle = "#ff8";
     for (i = 0; i < bullets.length; i++) {
       drawBullet(bullets[i]);
-    }
-
-    if (phase === PHASE_LEVEL) {
-      drawOverlayBadge("level");
-    } else if (phase === PHASE_OVER) {
-      drawOverlayBadge("over");
     }
 
     if (phase === PHASE_READY && readyTimer > 0) {
