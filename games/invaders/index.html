@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SL Invaders</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="game-wrap">
+        <canvas id="game" width="768" height="640"></canvas>
+        <div id="hud"></div>
+        <div id="overlay">
+          <div>
+            <h1>SL INVADERS</h1>
+            <p>Arrow keys or A/D to move. Space to fire.</p>
+            <p id="player-line">Player: …</p>
+            <button id="btn-start" type="button">START</button>
+          </div>
+        </div>
+      </div>
+      <aside id="sidebar">
+        <h2>LEADERBOARD</h2>
+        <div class="personal-score" id="personal-score">
+          Your personal high score: —
+        </div>
+        <div id="scores-unavailable" class="hidden"></div>
+        <ol id="leaderboard"></ol>
+        <div id="game-messages"></div>
+      </aside>
+    </div>
+    <script src="../../shared/sl-api.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

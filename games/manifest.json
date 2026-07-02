@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "games": [
+    {
+      "id": "invaders",
+      "title": "SL Invaders",
+      "description": "Classic space invaders arcade action.",
+      "url": "games/invaders/",
+      "status": "available"
+    }
+  ]
+}
