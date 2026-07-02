@@ -1,5 +1,6 @@
 {
   "id": "invaders",
   "title": "SL Invaders",
+  "version": "1.0.0",
   "description": "Classic space invaders arcade action."
 }
