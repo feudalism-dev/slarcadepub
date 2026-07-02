@@ -32,12 +32,14 @@
   var PHASE_READY = "ready";
   var PHASE_PLAYING = "playing";
   var PHASE_LEVEL = "levelComplete";
+  var PHASE_DIED = "died";
   var PHASE_OVER = "gameOver";
 
   var READY_FRAMES = 120;
   var RESPAWN_FRAMES = 90;
   var STARTING_LIVES = 3;
   var LIFE_BONUS_SCORES = [2000, 5000, 10000];
+  var CONTINUE_TIMEOUT_MS = 30000;
 
   var keys = {};
   var phase = PHASE_MENU;
@@ -53,6 +55,8 @@
   var lifeBonusesClaimed = 0;
   var bonusFlashTimer = 0;
   var bonusFlashText = "";
+  var continueDeadline = 0;
+  var continueTimerId = null;
 
   var player = { x: W / 2 - 22, y: H - 52, w: 44, h: 28, speed: 5 };
   var bullets = [];
@@ -486,6 +490,63 @@
     });
   }
 
+  function clearContinueTimer() {
+    if (continueTimerId !== null) {
+      clearInterval(continueTimerId);
+      continueTimerId = null;
+    }
+    continueDeadline = 0;
+  }
+
+  function tickDeathTimer() {
+    if (phase !== PHASE_DIED) {
+      clearContinueTimer();
+      return;
+    }
+    var leftMs = continueDeadline - Date.now();
+    if (leftMs <= 0) {
+      clearContinueTimer();
+      endHintEl.textContent = "Time's up!";
+      gameOver();
+      return;
+    }
+    var leftSec = Math.ceil(leftMs / 1000);
+    endHintEl.textContent =
+      "Continue within " + leftSec + " second" + (leftSec === 1 ? "" : "s") + "…";
+  }
+
+  function showDeathContinue() {
+    phase = PHASE_DIED;
+    running = false;
+    bullets = [];
+    player.x = W / 2 - player.w / 2;
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = "YOU DIED!";
+    instructionsEl.textContent =
+      "You have " +
+      lives +
+      (lives === 1 ? " life" : " lives") +
+      " remaining.";
+    btnStart.textContent = "CONTINUE";
+    btnStart.disabled = false;
+    setOverlayButtons(true, false);
+    setStartScreenExtras(false);
+    setQuitVisible(true);
+    continueDeadline = Date.now() + CONTINUE_TIMEOUT_MS;
+    clearContinueTimer();
+    tickDeathTimer();
+    continueTimerId = setInterval(tickDeathTimer, 250);
+  }
+
+  function continueAfterDeath() {
+    if (phase !== PHASE_DIED) {
+      return;
+    }
+    clearContinueTimer();
+    playerInvuln = RESPAWN_FRAMES;
+    beginReadyCountdown("GET READY!", "Back in the fight!");
+    readyTimer = RESPAWN_FRAMES;
+  }
   function showLevelComplete() {
     phase = PHASE_LEVEL;
     running = false;
@@ -503,20 +564,14 @@
     if (playerInvuln > 0 || phase !== PHASE_PLAYING) {
       return;
     }
+    running = false;
     lives--;
     updateHud();
-    bullets = [];
     if (lives <= 0) {
       gameOver();
       return;
     }
-    player.x = W / 2 - player.w / 2;
-    playerInvuln = RESPAWN_FRAMES;
-    beginReadyCountdown(
-      "SHIP HIT!",
-      lives + (lives === 1 ? " life" : " lives") + " remaining — get back in there!"
-    );
-    readyTimer = RESPAWN_FRAMES;
+    showDeathContinue();
   }
 
   function checkPlayerHit() {
@@ -719,7 +774,7 @@
       }
     }
 
-    if (phase !== PHASE_MENU && phase !== PHASE_OVER) {
+    if (phase !== PHASE_MENU && phase !== PHASE_OVER && phase !== PHASE_DIED) {
       drawPlayerShip();
     }
 
@@ -741,6 +796,7 @@
   }
 
   function gameOver() {
+    clearContinueTimer();
     phase = PHASE_OVER;
     running = false;
     overlay.classList.remove("hidden");
@@ -815,6 +871,11 @@
     if (btnStart.disabled) {
       return;
     }
+    if (phase === PHASE_DIED) {
+      continueAfterDeath();
+      return;
+    }
+    clearContinueTimer();
     score = 0;
     lives = STARTING_LIVES;
     level = 1;
@@ -844,6 +905,7 @@
     if (phase === PHASE_MENU || phase === PHASE_OVER) {
       return;
     }
+    clearContinueTimer();
     phase = PHASE_MENU;
     running = false;
     bullets = [];
@@ -866,6 +928,14 @@
     }
     if (e.key === "Escape" && phase !== PHASE_MENU && phase !== PHASE_OVER) {
       quitGame();
+    }
+    if (
+      (e.key === "Enter" || e.key === " ") &&
+      phase === PHASE_DIED &&
+      !btnStart.disabled
+    ) {
+      e.preventDefault();
+      continueAfterDeath();
     }
   });
   window.addEventListener("keyup", function (e) {
