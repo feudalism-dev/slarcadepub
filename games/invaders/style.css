@@ -12,16 +12,11 @@ body {
   background: #020208;
   color: #e8f4ff;
   font-family: "Segoe UI", Tahoma, sans-serif;
-  /* SL MOAP CEF: lock to the visible media viewport (avoid 100dvh overflow). */
   position: fixed;
   inset: 0;
 }
 
-/* Viewport-locked shell — do not grow with sidebar content */
 #app {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) min(260px, 28vw);
-  grid-template-rows: minmax(0, 1fr);
   position: fixed;
   inset: 0;
   width: 100%;
@@ -31,8 +26,7 @@ body {
 
 #game-wrap {
   position: relative;
-  min-width: 0;
-  min-height: 0;
+  width: 100%;
   height: 100%;
   overflow: hidden;
   background: #000;
@@ -44,7 +38,6 @@ canvas {
   height: 100%;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
-  /* Keyboard-only game; canvas must not steal START clicks from #overlay */
   pointer-events: none;
 }
 
@@ -110,6 +103,65 @@ canvas {
   margin-top: 0;
 }
 
+#btn-leaderboard {
+  border-color: #9ad0ff;
+  background: #101a30;
+  color: #d8ecff;
+}
+
+#btn-leaderboard:hover {
+  background: #1a2a48;
+}
+
+.start-scores {
+  margin: 0.6rem 0 0.35rem;
+  padding: 0.5rem 0.65rem;
+  background: rgba(20, 26, 42, 0.85);
+  border: 1px solid #2f3f66;
+  border-radius: 2px;
+}
+
+.start-scores p {
+  margin: 0.2rem 0;
+  font-size: clamp(0.82rem, 2.2vw, 0.95rem);
+}
+
+.start-scores.hidden {
+  display: none;
+}
+
+#high-score {
+  color: #7cf57c;
+}
+
+#scores-unavailable {
+  margin: 0.35rem 0;
+  padding: 0.45rem;
+  background: #2a1810;
+  border: 1px solid #66442f;
+  color: #ffcc99;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+#scores-unavailable.hidden {
+  display: none;
+}
+
+#game-messages {
+  margin-top: 0.35rem;
+  min-height: 1.5rem;
+}
+
+.msg {
+  margin: 0.2rem 0;
+  color: #ffd27c;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
 #btn-quit {
   position: absolute;
   top: 8px;
@@ -137,59 +189,66 @@ canvas {
   background: #1a4a1a;
 }
 
-#sidebar {
-  min-height: 0;
-  height: 100%;
-  padding: 0.6rem;
-  background: linear-gradient(180deg, #101428, #080810);
-  border-left: 1px solid #2a3555;
-  overflow-x: hidden;
-  overflow-y: auto;
+#hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  font-size: 0.85rem;
+  text-shadow: 0 0 4px #000;
+  pointer-events: none;
 }
 
-#sidebar h2 {
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.78);
+  pointer-events: auto;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-panel {
+  width: min(22rem, 92vw);
+  max-height: min(80vh, 28rem);
+  padding: 0.75rem;
+  background: linear-gradient(180deg, #101428, #080810);
+  border: 1px solid #2a3555;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-panel h2 {
   margin: 0 0 0.5rem;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   letter-spacing: 0.08em;
   color: #9ad0ff;
-}
-
-.personal-score {
-  margin-bottom: 0.5rem;
-  padding: 0.45rem;
-  background: #141a2a;
-  border: 1px solid #2f3f66;
-  font-size: 0.82rem;
-}
-
-#scores-unavailable {
-  margin-bottom: 0.5rem;
-  padding: 0.45rem;
-  background: #2a1810;
-  border: 1px solid #66442f;
-  color: #ffcc99;
-  font-size: 0.72rem;
-  line-height: 1.3;
-  max-height: 9rem;
-  overflow-y: auto;
-}
-
-#scores-unavailable.hidden {
-  display: none;
 }
 
 #leaderboard {
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 #leaderboard li {
   display: grid;
   grid-template-columns: 1.4rem 1fr auto;
   gap: 0.25rem;
-  padding: 0.2rem 0;
+  padding: 0.25rem 0;
   border-bottom: 1px solid #1e2640;
 }
 
@@ -202,38 +261,17 @@ canvas {
   font-variant-numeric: tabular-nums;
 }
 
-#game-messages {
-  margin-top: 0.5rem;
-  min-height: 2rem;
-}
-
-.msg {
-  margin: 0.2rem 0;
-  color: #ffd27c;
-  font-weight: 600;
-  font-size: 0.82rem;
-}
-
-#hud {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 1;
+#btn-modal-close {
+  margin-top: 0.65rem;
+  padding: 0.5rem 1rem;
+  align-self: center;
+  border: 2px solid #9ad0ff;
+  background: #101a30;
+  color: #d8ecff;
+  cursor: pointer;
   font-size: 0.85rem;
-  text-shadow: 0 0 4px #000;
-  pointer-events: none;
 }
 
-/* Short or portrait windows: stack leaderboard under game */
-@media (max-aspect-ratio: 4/5), (max-height: 520px) {
-  #app {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
-
-  #sidebar {
-    max-height: 38vh;
-    border-left: none;
-    border-top: 1px solid #2a3555;
-  }
+#btn-modal-close:hover {
+  background: #1a2a48;
 }

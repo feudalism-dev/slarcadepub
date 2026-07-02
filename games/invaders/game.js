@@ -9,10 +9,15 @@
   var btnStart = document.getElementById("btn-start");
   var btnNext = document.getElementById("btn-next");
   var btnQuit = document.getElementById("btn-quit");
+  var btnLeaderboard = document.getElementById("btn-leaderboard");
+  var btnModalClose = document.getElementById("btn-modal-close");
   var hud = document.getElementById("hud");
+  var startScoresEl = document.getElementById("start-scores");
   var personalEl = document.getElementById("personal-score");
+  var highScoreEl = document.getElementById("high-score");
   var unavailableEl = document.getElementById("scores-unavailable");
   var leaderboardEl = document.getElementById("leaderboard");
+  var leaderboardModal = document.getElementById("leaderboard-modal");
   var messagesEl = document.getElementById("game-messages");
   var playerLine = document.getElementById("player-line");
   var instructionsEl = document.getElementById("instructions");
@@ -260,28 +265,24 @@
     return n;
   }
 
-  function formatPersonal(scoreVal, enabled) {
+  var lastLeaderboardData = null;
+
+  function formatTopScore(scoreVal, enabled) {
     if (!enabled || !scoreVal) {
-      return "Your personal high score: —";
+      return "Your top score: —";
     }
-    return "Your personal high score: " + scoreVal;
+    return "Your top score: " + scoreVal;
   }
 
-  function renderLeaderboard(data) {
-    var enabled = !!data.scoresEnabled;
-    personalEl.textContent = formatPersonal(data.personalScore || 0, enabled);
-
-    if (!enabled || data.unavailableMessage) {
-      unavailableEl.textContent =
-        data.unavailableMessage || SLArcade.SCORES_UNAVAILABLE_MSG;
-      unavailableEl.classList.remove("hidden");
-      leaderboardEl.innerHTML = "";
-      return;
+  function formatHighScore(entries, enabled) {
+    if (!enabled || !entries || !entries.length) {
+      return "High score: —";
     }
+    return "High score: " + entries[0].score;
+  }
 
-    unavailableEl.classList.add("hidden");
+  function renderLeaderboardList(entries) {
     leaderboardEl.innerHTML = "";
-    var entries = data.entries || [];
     var i;
     for (i = 0; i < entries.length; i++) {
       var e = entries[i];
@@ -307,6 +308,52 @@
     }
   }
 
+  function updateStartScores(data) {
+    var enabled = !!data.scoresEnabled;
+    personalEl.textContent = formatTopScore(data.personalScore || 0, enabled);
+    highScoreEl.textContent = formatHighScore(data.entries || [], enabled);
+
+    if (!enabled || data.unavailableMessage) {
+      unavailableEl.textContent =
+        data.unavailableMessage || SLArcade.SCORES_UNAVAILABLE_MSG;
+      unavailableEl.classList.remove("hidden");
+      startScoresEl.classList.add("hidden");
+      btnLeaderboard.classList.add("hidden");
+      return;
+    }
+
+    unavailableEl.classList.add("hidden");
+    startScoresEl.classList.remove("hidden");
+    if (phase === PHASE_MENU) {
+      btnLeaderboard.classList.remove("hidden");
+    }
+  }
+
+  function renderLeaderboard(data) {
+    lastLeaderboardData = data;
+    updateStartScores(data);
+    renderLeaderboardList(data.entries || []);
+  }
+
+  function openLeaderboardModal() {
+    if (lastLeaderboardData) {
+      renderLeaderboardList(lastLeaderboardData.entries || []);
+    }
+    leaderboardModal.classList.remove("hidden");
+  }
+
+  function closeLeaderboardModal() {
+    leaderboardModal.classList.add("hidden");
+  }
+
+  function setStartScreenExtras(visible) {
+    startScoresEl.classList.toggle("hidden", !visible);
+    btnLeaderboard.classList.toggle("hidden", !visible);
+    if (!visible) {
+      closeLeaderboardModal();
+    }
+  }
+
   function showMessages(list) {
     messagesEl.innerHTML = "";
     if (!list || !list.length) {
@@ -327,6 +374,7 @@
       .catch(function () {
         unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
         unavailableEl.classList.remove("hidden");
+        startScoresEl.classList.add("hidden");
       });
   }
 
@@ -353,7 +401,11 @@
     btnStart.disabled = false;
     btnStart.textContent = "START";
     setOverlayButtons(true, false);
+    setStartScreenExtras(true);
     setQuitVisible(false);
+    if (lastLeaderboardData) {
+      updateStartScores(lastLeaderboardData);
+    }
   }
 
   function beginReadyCountdown(titleText, hintText) {
@@ -366,6 +418,7 @@
       hintText || "Invaders are lining up… stand by!";
     endHintEl.textContent = "";
     setOverlayButtons(false, false);
+    setStartScreenExtras(false);
     setQuitVisible(true);
   }
 
@@ -401,6 +454,7 @@
     endHintEl.textContent = "";
     btnNext.textContent = "NEXT LEVEL";
     setOverlayButtons(false, true);
+    setStartScreenExtras(false);
     setQuitVisible(true);
   }
 
@@ -593,6 +647,7 @@
     btnStart.textContent = "SESSION ENDING…";
     btnStart.disabled = true;
     setOverlayButtons(true, false);
+    setStartScreenExtras(false);
     setQuitVisible(false);
 
     SLArcade.submitScore(score)
@@ -696,6 +751,21 @@
   btnQuit.addEventListener("touchend", function (e) {
     e.preventDefault();
     quitGame();
+  });
+  btnLeaderboard.addEventListener("click", openLeaderboardModal);
+  btnLeaderboard.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    openLeaderboardModal();
+  });
+  btnModalClose.addEventListener("click", closeLeaderboardModal);
+  btnModalClose.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    closeLeaderboardModal();
+  });
+  leaderboardModal.addEventListener("click", function (e) {
+    if (e.target === leaderboardModal) {
+      closeLeaderboardModal();
+    }
   });
 
   window.addEventListener("message", function () {
