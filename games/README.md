@@ -6,6 +6,13 @@ Each game is a self-contained folder under `games/<id>/` with its own URL:
 https://feudalism-dev.github.io/slarcadepub/games/<id>/
 ```
 
+## Games
+
+| ID | Title | LSL scripts |
+|----|-------|-------------|
+| `invaders` | SL Invaders | `Arcade_Controller.lsl` + `Arcade_Scores.lsl` |
+| `galaslian` | GalaSLian | `Galaslian_Controller.lsl` + `Galaslian_Scores.lsl` |
+
 ## Checklist
 
 1. **Create** `games/<id>/` with at minimum:

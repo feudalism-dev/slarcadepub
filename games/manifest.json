@@ -7,6 +7,13 @@
       "description": "Classic space invaders arcade action.",
       "url": "games/invaders/",
       "status": "available"
+    },
+    {
+      "id": "galaslian",
+      "title": "GalaSLian",
+      "description": "Formation shooters dive at you — Galaxian-style arcade action.",
+      "url": "games/galaslian/",
+      "status": "available"
     }
   ]
 }

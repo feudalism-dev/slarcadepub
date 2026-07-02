@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>GalaSLian</title>
+    <style>
+      html,
+      body,
+      #app {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #020208;
+      }
+    </style>
+    <link rel="stylesheet" href="style.css?v=1" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="game-wrap">
+        <canvas id="game" width="768" height="640"></canvas>
+        <div id="hud"></div>
+        <div id="overlay">
+          <div>
+            <h1 id="overlay-title">GALASLIAN</h1>
+            <p id="instructions">Arrow keys or A/D to move. Space to fire.</p>
+            <p id="player-line">Player: …</p>
+            <div id="start-scores" class="start-scores">
+              <p id="personal-score">Your top score: —</p>
+              <p id="high-score">High score: —</p>
+            </div>
+            <div id="scores-unavailable" class="hidden"></div>
+            <div id="game-messages"></div>
+            <p id="end-hint"></p>
+            <div class="overlay-actions">
+              <button id="btn-start" type="button">START</button>
+              <button id="btn-leaderboard" type="button" class="hidden">LEADERBOARD</button>
+              <button id="btn-next" type="button" class="hidden">NEXT WAVE</button>
+            </div>
+          </div>
+        </div>
+        <button id="btn-quit" type="button" class="hidden" title="Quit game (Esc)">QUIT</button>
+      </div>
+    </div>
+    <div id="leaderboard-modal" class="modal hidden" role="dialog" aria-labelledby="leaderboard-title" aria-modal="true">
+      <div class="modal-panel">
+        <h2 id="leaderboard-title">LEADERBOARD</h2>
+        <ol id="leaderboard"></ol>
+        <button id="btn-modal-close" type="button">CLOSE</button>
+      </div>
+    </div>
+    <script src="../../shared/sl-api.js?v=18"></script>
+    <script src="game.js?v=1"></script>
+  </body>
+</html>
