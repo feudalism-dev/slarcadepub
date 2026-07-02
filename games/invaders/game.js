@@ -37,6 +37,7 @@
   var READY_FRAMES = 120;
   var RESPAWN_FRAMES = 90;
   var STARTING_LIVES = 3;
+  var LIFE_BONUS_SCORES = [2000, 5000, 10000];
 
   var keys = {};
   var phase = PHASE_MENU;
@@ -49,6 +50,9 @@
   var readyTimer = 0;
   var animFrame = 0;
   var playerInvuln = 0;
+  var lifeBonusesClaimed = 0;
+  var bonusFlashTimer = 0;
+  var bonusFlashText = "";
 
   var player = { x: W / 2 - 22, y: H - 52, w: 44, h: 28, speed: 5 };
   var bullets = [];
@@ -384,8 +388,26 @@
   }
 
   function updateHud() {
-    hud.textContent =
+    var line =
       "SCORE " + score + "   LEVEL " + level + "   LIVES " + lives;
+    if (bonusFlashTimer > 0) {
+      line += "   |   " + bonusFlashText;
+    }
+    hud.textContent = line;
+  }
+
+  function checkLifeBonuses() {
+    var i;
+    for (i = lifeBonusesClaimed; i < LIFE_BONUS_SCORES.length; i++) {
+      if (score < LIFE_BONUS_SCORES[i]) {
+        return;
+      }
+      lives++;
+      lifeBonusesClaimed = i + 1;
+      bonusFlashText = "EXTRA LIFE — " + LIFE_BONUS_SCORES[i] + " pts!";
+      bonusFlashTimer = 150;
+      updateHud();
+    }
   }
 
   function setOverlayButtons(showStart, showNext) {
@@ -525,6 +547,13 @@
     if (playerInvuln > 0) {
       playerInvuln--;
     }
+    if (bonusFlashTimer > 0) {
+      bonusFlashTimer--;
+      if (bonusFlashTimer === 0) {
+        bonusFlashText = "";
+        updateHud();
+      }
+    }
 
     if (keys.ArrowLeft || keys.a || keys.A) {
       player.x -= player.speed;
@@ -599,6 +628,7 @@
           inv.alive = false;
           bullets.splice(i, 1);
           score += ROW_POINTS[inv.row] || 10;
+          checkLifeBonuses();
           updateHud();
           break;
         }
@@ -791,6 +821,9 @@
     frame = 0;
     animFrame = 0;
     playerInvuln = 0;
+    lifeBonusesClaimed = 0;
+    bonusFlashTimer = 0;
+    bonusFlashText = "";
     showMessages([]);
     unavailableEl.classList.add("hidden");
     endHintEl.textContent = "";
