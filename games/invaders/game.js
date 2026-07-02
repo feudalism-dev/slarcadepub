@@ -33,6 +33,8 @@
   var PHASE_OVER = "gameOver";
 
   var READY_FRAMES = 120;
+  var RESPAWN_FRAMES = 90;
+  var STARTING_LIVES = 3;
 
   var keys = {};
   var phase = PHASE_MENU;
@@ -44,6 +46,7 @@
   var lastShot = 0;
   var readyTimer = 0;
   var animFrame = 0;
+  var playerInvuln = 0;
 
   var player = { x: W / 2 - 22, y: H - 52, w: 44, h: 28, speed: 5 };
   var bullets = [];
@@ -458,9 +461,54 @@
     setQuitVisible(true);
   }
 
+  function loseLife() {
+    if (playerInvuln > 0 || phase !== PHASE_PLAYING) {
+      return;
+    }
+    lives--;
+    updateHud();
+    bullets = [];
+    if (lives <= 0) {
+      gameOver();
+      return;
+    }
+    player.x = W / 2 - player.w / 2;
+    playerInvuln = RESPAWN_FRAMES;
+    beginReadyCountdown(
+      "SHIP HIT!",
+      lives + (lives === 1 ? " life" : " lives") + " remaining — get back in there!"
+    );
+    readyTimer = RESPAWN_FRAMES;
+  }
+
+  function checkPlayerHit() {
+    if (playerInvuln > 0) {
+      return;
+    }
+    var i;
+    for (i = 0; i < invaders.length; i++) {
+      var inv = invaders[i];
+      if (!inv.alive) {
+        continue;
+      }
+      if (rectsOverlap(player, inv)) {
+        loseLife();
+        return;
+      }
+      if (inv.y + inv.h >= player.y) {
+        loseLife();
+        return;
+      }
+    }
+  }
+
   function updatePlaying() {
     frame++;
     animFrame++;
+
+    if (playerInvuln > 0) {
+      playerInvuln--;
+    }
 
     if (keys.ArrowLeft || keys.a || keys.A) {
       player.x -= player.speed;
@@ -509,13 +557,18 @@
       for (i = 0; i < invaders.length; i++) {
         if (invaders[i].alive) {
           invaders[i].y += invaderDrop;
-          if (invaders[i].y + invaders[i].h >= player.y) {
-            gameOver();
-            return;
-          }
         }
       }
       invaderSpeed += 0.04;
+      checkPlayerHit();
+      if (phase !== PHASE_PLAYING) {
+        return;
+      }
+    }
+
+    checkPlayerHit();
+    if (phase !== PHASE_PLAYING) {
+      return;
     }
 
     for (i = 0; i < bullets.length; i++) {
@@ -565,6 +618,9 @@
   }
 
   function drawPlayerShip() {
+    if (playerInvuln > 0 && Math.floor(playerInvuln / 6) % 2 === 0) {
+      return;
+    }
     var cx = player.x + player.w / 2;
     var cy = player.y + player.h / 2;
     drawPixelSpriteCentered(PLAYER_SHIP, cx, cy, 4, "#6f9");
@@ -711,11 +767,14 @@
       return;
     }
     score = 0;
-    lives = 3;
+    lives = STARTING_LIVES;
     level = 1;
     frame = 0;
     animFrame = 0;
+    playerInvuln = 0;
     showMessages([]);
+    unavailableEl.classList.add("hidden");
+    endHintEl.textContent = "";
     initInvaders();
     startLevelAfterReady("GET READY!", "First wave incoming…");
   }
