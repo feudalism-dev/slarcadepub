@@ -16,6 +16,38 @@
     avatar: "",
   };
   var apiBase = "";
+  var urlSeedPersonal = -1;
+  var urlSeedHigh = -1;
+
+  function parseSeedInt(raw) {
+    if (raw === "" || raw === undefined || raw === null) {
+      return -1;
+    }
+    var n = parseInt(raw, 10);
+    if (isNaN(n) || n < 0) {
+      return -1;
+    }
+    return n;
+  }
+
+  function leaderboardFromUrlSeed() {
+    var entries = [];
+    if (urlSeedHigh > 0) {
+      entries.push({
+        rank: 1,
+        score: urlSeedHigh,
+        name: "—",
+        avatar: "",
+      });
+    }
+    return {
+      ok: true,
+      scoresEnabled: true,
+      personalScore: urlSeedPersonal > 0 ? urlSeedPersonal : 0,
+      entries: entries,
+      unavailableMessage: "",
+    };
+  }
 
   function validCallbackName(name) {
     return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
@@ -161,6 +193,8 @@
       name: readQueryParam("sl_name"),
       avatar: readQueryParam("sl_avatar"),
     });
+    urlSeedPersonal = parseSeedInt(readQueryParam("sl_personal"));
+    urlSeedHigh = parseSeedInt(readQueryParam("sl_high"));
     return true;
   }
 
@@ -180,6 +214,9 @@
 
   function getLeaderboard() {
     if (!apiBase) {
+      if (session.scores) {
+        return Promise.resolve(leaderboardFromUrlSeed());
+      }
       return Promise.resolve({
         ok: true,
         scoresEnabled: false,
@@ -193,6 +230,15 @@
 
   function submitScore(score) {
     if (!apiBase) {
+      if (session.scores) {
+        return Promise.resolve({
+          ok: true,
+          saved: false,
+          scoresEnabled: true,
+          messages: [],
+          unavailableMessage: "",
+        });
+      }
       return Promise.resolve({
         ok: true,
         saved: false,
