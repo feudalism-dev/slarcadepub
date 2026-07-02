@@ -6,7 +6,7 @@
   "use strict";
 
   var SCORES_UNAVAILABLE_MSG =
-    "Scores unavailable. High scores require a free HTTP-IN URL on this parcel (cabinet owner: check URL quota) and the Debauchery RPG experience enabled and accepted on this parcel/region. The game is fully playable without these, but you cannot save or view scores.";
+    "Scores unavailable. High scores require a free HTTP-IN URL on this parcel (cabinet owner: check URL quota) and the Debauchery RPG experience allowed on this parcel/region. The game is fully playable without these, but you cannot save or view scores.";
 
   var session = {
     game: "",
