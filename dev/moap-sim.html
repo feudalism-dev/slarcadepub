@@ -47,10 +47,15 @@
         var frame = document.getElementById("game");
         frame.src = gameUrl;
         frame.onload = function () {
-          frame.contentWindow.postMessage(
-            { type: "sl-session", session: session, api: api },
-            "*"
-          );
+          function send() {
+            frame.contentWindow.postMessage(
+              { type: "sl-session", session: session, api: api },
+              "*"
+            );
+          }
+          send();
+          setTimeout(send, 100);
+          setTimeout(send, 500);
         };
       })();
     </script>

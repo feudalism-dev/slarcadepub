@@ -41,7 +41,25 @@ shared/
 
 Copy the contents of the local `pub/` folder to this repo's `main` branch root, then push.
 
-## Adding a game
+### GitHub Pages
+
+Enable **Settings → Pages → Source: GitHub Actions**. Pushes to `main` run `.github/workflows/pages.yml`.
+
+Site: https://feudalism-dev.github.io/slarcadepub/
+
+### Local testing
+
+```bash
+cd pub
+python -m http.server 8765
+node dev/verify.mjs
+```
+
+| URL | Purpose |
+|-----|---------|
+| http://127.0.0.1:8765/games/invaders/ | Game (offline scores) |
+| http://127.0.0.1:8765/dev/moap-sim.html | MOAP iframe + postMessage simulator |
+
 
 See [games/README.md](games/README.md).
 
