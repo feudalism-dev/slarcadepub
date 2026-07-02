@@ -17,7 +17,7 @@
         background: #020208;
       }
     </style>
-    <link rel="stylesheet" href="style.css?v=5" />
+    <link rel="stylesheet" href="style.css?v=6" />
   </head>
   <body>
     <div id="app">
@@ -26,13 +26,17 @@
         <div id="hud"></div>
         <div id="overlay">
           <div>
-            <h1>SL INVADERS</h1>
+            <h1 id="overlay-title">SL INVADERS</h1>
             <p id="instructions">Arrow keys or A/D to move. Space to fire.</p>
             <p id="player-line">Player: …</p>
             <p id="end-hint"></p>
-            <button id="btn-start" type="button">START</button>
+            <div class="overlay-actions">
+              <button id="btn-start" type="button">START</button>
+              <button id="btn-next" type="button" class="hidden">NEXT LEVEL</button>
+            </div>
           </div>
         </div>
+        <button id="btn-quit" type="button" class="hidden" title="Quit game (Esc)">QUIT</button>
       </div>
       <aside id="sidebar">
         <h2>LEADERBOARD</h2>
@@ -44,7 +48,7 @@
         <div id="game-messages"></div>
       </aside>
     </div>
-    <script src="../../shared/sl-api.js?v=5"></script>
-    <script src="game.js?v=5"></script>
+    <script src="../../shared/sl-api.js?v=6"></script>
+    <script src="game.js?v=6"></script>
   </body>
 </html>

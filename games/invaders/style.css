@@ -94,6 +94,45 @@ canvas {
   cursor: pointer;
 }
 
+#overlay button.hidden {
+  display: none;
+}
+
+.overlay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.overlay-actions button {
+  margin-top: 0;
+}
+
+#btn-quit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  border: 1px solid #f88;
+  background: rgba(40, 10, 10, 0.92);
+  color: #ffcccc;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#btn-quit:hover {
+  background: rgba(80, 20, 20, 0.95);
+}
+
+#btn-quit.hidden {
+  display: none;
+}
+
 #overlay button:hover {
   background: #1a4a1a;
 }
