@@ -29,7 +29,7 @@
   var H = canvas.height;
 
   var COLS = 21;
-  var ROWS = 16;
+  var ROWS = 15;
   var TUNNEL_ROW = 9;
   var BOTTOM_PAD = 8;
   var TOP_PAD = 22;
@@ -74,16 +74,15 @@
     "#.........#.........#",
     "#.###.###.#.###.###.#",
     "#o..#.....#.....#..o#",
-    "#.###.#.###.#.###.#.#",
-    "#.....#.....#.....#.#",
-    "#.###.#.......#.###.#",
-    "#.....#..g..#.....#.#",
-    "#.###.#.#####.#.###.#",
+    "#.#.###.#.#.###.#.#.#",
+    "#.#.....#.#.....#.#.#",
+    "#.#.###.....###.#.#.#",
+    "#......#..g..#......#",
+    "#.#.###.....###.#.#.#",
     ".....#.....#.........",
-    "#.###.#.###.#.###.#.#",
+    "#.#.###.#.#.###.#.#.#",
     "#o..#.....#.....#..o#",
     "#.###.###.#.###.###.#",
-    "#.........#.........#",
     "#.........#.........#",
     "#####################",
   ];
@@ -228,8 +227,8 @@
     }
     var mazeCheck = cloneMaze();
     var seen = {};
-    var queue = [{ c: 9, r: 14 }];
-    seen["9,14"] = true;
+    var queue = [{ c: 9, r: 13 }];
+    seen["9,13"] = true;
     while (queue.length) {
       var cur = queue.shift();
       var nbrs = mazeNeighborsOn(mazeCheck, cur.c, cur.r);
@@ -290,21 +289,21 @@
   }
 
   function playerSpeed() {
-    return 0.68 + level * 0.035;
+    return 1.05 + level * 0.03;
   }
 
   function ghostSpeed(frightened) {
     if (frightened) {
-      return 0.52 + level * 0.02;
+      return 0.42 + level * 0.015;
     }
-    return 0.62 + level * 0.03;
+    return 0.56 + level * 0.025;
   }
 
   function initLevel() {
     maze = cloneMaze();
     validateMazeTemplate();
     dotsLeft = countDots();
-    player = findStart(9, 14, DIR_LEFT);
+    player = findStart(9, 13, DIR_LEFT);
     ghosts = [
       makeGhost(8, 7, DIR_UP, 0, true),
       makeGhost(10, 7, DIR_UP, 1, true),
@@ -685,7 +684,7 @@
       return;
     }
     clearContinueTimer();
-    player = findStart(9, 14, DIR_LEFT);
+    player = findStart(9, 13, DIR_LEFT);
     var i;
     for (i = 0; i < ghosts.length; i++) {
       ghosts[i] = makeGhost(
