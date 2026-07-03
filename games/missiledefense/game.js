@@ -231,6 +231,7 @@
       r: 2,
       maxR: maxR || EXP_MAX_R,
       growing: true,
+      age: 0,
     });
   }
 
@@ -286,6 +287,11 @@
     var i;
     for (i = explosions.length - 1; i >= 0; i--) {
       var e = explosions[i];
+      e.age++;
+      if (e.age > 120) {
+        explosions.splice(i, 1);
+        continue;
+      }
       if (e.growing) {
         e.r += EXP_GROW;
         if (e.r >= e.maxR) {
@@ -313,6 +319,7 @@
     var i;
     for (i = interceptors.length - 1; i >= 0; i--) {
       var p = interceptors[i];
+      var prevD = dist(p.x, p.y, p.tx, p.ty);
       p.trail.push({ x: p.x, y: p.y });
       if (p.trail.length > 12) {
         p.trail.shift();
@@ -320,7 +327,8 @@
       p.x += p.vx;
       p.y += p.vy;
       var d = dist(p.x, p.y, p.tx, p.ty);
-      if (d < p.vx + 2) {
+      var speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+      if (d < speed + 2 || d > prevD || p.y < -20 || p.y > H + 20) {
         addExplosion(p.tx, p.ty, EXP_MAX_R);
         interceptors.splice(i, 1);
       }
