@@ -31,6 +31,14 @@
   var COLS = 21;
   var ROWS = 15;
   var TUNNEL_ROW = 9;
+  var PEN_ROW_TOP = 6;
+  var PEN_ROW_MID = 7;
+  var PEN_ROW_BOT = 8;
+  var PEN_COL_LEFT = 6;
+  var PEN_COL_RIGHT = 14;
+  var PEN_DOOR_COL = 10;
+  var GHOST_RELEASE_BASE = 150;
+  var GHOST_RELEASE_STAGGER = 150;
   var BOTTOM_PAD = 8;
   var TOP_PAD = 22;
   var TILE = Math.floor((H - TOP_PAD - BOTTOM_PAD) / ROWS);
@@ -76,9 +84,9 @@
     "#o.................o#",
     "#.###.###...###.###.#",
     "#...................#",
-    "#.###...........###.#",
-    "#.......  g  .......#",
-    "#.###...........###.#",
+    "#.###..       ..###.#",
+    "#         g         #",
+    "#.###..######...###.#",
     ".....#.........#.....",
     "#.###.###...###.###.#",
     "#o.................o#",
@@ -305,10 +313,10 @@
     dotsLeft = countDots();
     player = findStart(9, 13, DIR_LEFT);
     ghosts = [
-      makeGhost(8, 7, DIR_UP, 0, true),
-      makeGhost(9, 7, DIR_UP, 1, true),
-      makeGhost(10, 7, DIR_UP, 2, true),
-      makeGhost(11, 7, DIR_UP, 3, true),
+      makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, 0, true),
+      makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, 1, true),
+      makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, 2, true),
+      makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, 3, true),
     ];
     ghostMode = MODE_SCATTER;
     modeTimer = 0;
@@ -317,16 +325,17 @@
   }
 
   function makeGhost(c, r, dir, idx, inPen) {
+    var p = tileCenter(c, r);
     return {
       c: c,
       r: r,
-      x: tileCenter(c, r).x,
-      y: tileCenter(c, r).y,
+      x: p.x,
+      y: p.y + idx * 3,
       dir: dir,
       idx: idx,
       inPen: inPen,
       exiting: false,
-      releaseTimer: 120 + idx * 100,
+      releaseTimer: GHOST_RELEASE_BASE + idx * GHOST_RELEASE_STAGGER,
       eaten: false,
       speed: ghostSpeed(false),
     };
@@ -589,11 +598,15 @@
         g.speed = 1.1;
         g.dir = DIR_UP;
         moveActor(g, false);
-        if (g.r <= 7 && g.c >= 9 && g.c <= 11) {
+        if (g.r <= PEN_ROW_MID && g.c >= PEN_DOOR_COL - 1 && g.c <= PEN_DOOR_COL + 1) {
           g.eaten = false;
           g.inPen = true;
           g.exiting = false;
-          g.releaseTimer = 90;
+          g.releaseTimer = GHOST_RELEASE_BASE;
+          g.c = PEN_DOOR_COL;
+          g.r = PEN_ROW_MID;
+          snapActor(g);
+          g.y += g.idx * 3;
           g.speed = ghostSpeed(false);
         }
         continue;
@@ -601,17 +614,21 @@
       if (g.inPen && !g.exiting) {
         g.releaseTimer--;
         g.dir = DIR_NONE;
+        g.c = PEN_DOOR_COL;
+        g.r = PEN_ROW_MID;
         snapActor(g);
-        g.y += Math.sin(frame * 0.1 + g.idx * 1.7) * 0.25;
+        g.y += Math.sin(frame * 0.1 + g.idx * 1.7) * 0.35 + g.idx * 3;
         if (g.releaseTimer <= 0) {
           g.exiting = true;
           g.dir = DIR_UP;
+          g.c = PEN_DOOR_COL;
         }
         continue;
       }
       if (g.inPen && g.exiting) {
+        g.c = PEN_DOOR_COL;
         moveActor(g, false);
-        if (g.r <= 5) {
+        if (g.r <= PEN_ROW_TOP - 1) {
           g.inPen = false;
           g.exiting = false;
         }
@@ -687,13 +704,7 @@
     player = findStart(9, 13, DIR_LEFT);
     var i;
     for (i = 0; i < ghosts.length; i++) {
-      ghosts[i] = makeGhost(
-        i === 0 ? 8 : i === 1 ? 9 : i === 2 ? 10 : 11,
-        7,
-        DIR_UP,
-        i,
-        true
-      );
+      ghosts[i] = makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, i, true);
     }
     frightenedTimer = 0;
     ghostMode = MODE_SCATTER;
@@ -754,10 +765,23 @@
     }
   }
 
+  function drawGhostHouse() {
+    var x = OFF_X + PEN_COL_LEFT * TILE;
+    var y = OFF_Y + PEN_ROW_TOP * TILE;
+    var w = (PEN_COL_RIGHT - PEN_COL_LEFT + 1) * TILE;
+    var h = (PEN_ROW_BOT - PEN_ROW_TOP + 1) * TILE;
+    ctx.fillStyle = "#1a0820";
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.strokeStyle = "#ff9ad0";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+  }
+
   function drawMaze() {
     if (!maze.length) {
       return;
     }
+    drawGhostHouse();
     var r;
     var c;
     for (r = 0; r < ROWS; r++) {
@@ -812,9 +836,6 @@
     var i;
     for (i = 0; i < ghosts.length; i++) {
       var g = ghosts[i];
-      if (g.inPen && g.releaseTimer > 0) {
-        /* still in pen */
-      }
       var radius = TILE * 0.34;
       if (frightenedTimer > 0 && !g.eaten) {
         ctx.fillStyle = frightenedTimer < 90 && Math.floor(frame / 8) % 2 ? "#fff" : "#28f";
@@ -899,7 +920,7 @@
     readyTimer = READY_FRAMES;
     overlay.classList.remove("hidden");
     overlayTitle.textContent = titleText || "GET READY!";
-    instructionsEl.textContent = hintText || "Ghosts leaving the pen…";
+    instructionsEl.textContent = hintText || "Ghosts leave the pen one by one…";
     endHintEl.textContent = "";
     setOverlayButtons(false, false);
     setStartScreenExtras(false);
