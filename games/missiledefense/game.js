@@ -40,6 +40,8 @@
   var AMMO_PER_BATTERY = 10;
   var CITY_BONUS = 100;
   var KILL_POINTS = 25;
+  var SAUCER_POINTS = 125;
+  var BOMBER_POINTS = 50;
   var SPLIT_CHANCE = 0.35;
   var SPLIT_CHANCE_WAVE1 = 0.12;
   var EXP_MAX_R = 42;
@@ -58,9 +60,15 @@
   var interceptors = [];
   var explosions = [];
   var enemyMissiles = [];
+  var flyers = [];
   var waveSpawnsLeft = 0;
   var spawnTimer = 0;
   var spawnInterval = 55;
+  var flyerSpawnTimer = 0;
+  var flyerSpawnInterval = 320;
+
+  var FLYER_SAUCER = "saucer";
+  var FLYER_BOMBER = "bomber";
 
   function setOverlayButtons(showStart, showNext) {
     btnStart.classList.toggle("hidden", !showStart);
@@ -169,6 +177,65 @@
       trail: [],
       split: true,
     });
+  }
+
+  function maxFlyersForWave() {
+    if (wave < 2) {
+      return 0;
+    }
+    return 1 + Math.floor((wave - 1) / 2);
+  }
+
+  function spawnFlyer() {
+    if (flyers.length >= maxFlyersForWave()) {
+      return;
+    }
+    var fromLeft = Math.random() < 0.5;
+    var isSaucer = Math.random() < 0.38;
+    var y = 44 + Math.random() * 48;
+    var speed = isSaucer ? 2.4 + wave * 0.08 : 1.1 + wave * 0.06;
+    if (!fromLeft) {
+      speed = -speed;
+    }
+    flyers.push({
+      type: isSaucer ? FLYER_SAUCER : FLYER_BOMBER,
+      x: fromLeft ? -28 : W + 28,
+      y: y,
+      vx: speed,
+      w: isSaucer ? 22 : 26,
+      h: isSaucer ? 10 : 12,
+      dropTimer: 60 + Math.floor(Math.random() * 50),
+      dropInterval: Math.max(70, 130 - wave * 6),
+    });
+  }
+
+  function dropBombFromFlyer(f) {
+    var target = pickTarget();
+    var tx = target.x + target.w * 0.5;
+    var ty = target.y + target.h * 0.5;
+    var dx = tx - f.x;
+    var dy = ty - f.y;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) {
+      len = 1;
+    }
+    var speed = 0.75 + (wave - 1) * 0.1 + Math.random() * 0.15;
+    enemyMissiles.push({
+      x: f.x,
+      y: f.y + f.h * 0.5,
+      vx: (dx / len) * speed,
+      vy: (dy / len) * speed,
+      trail: [],
+      split: false,
+    });
+  }
+
+  function destroyFlyerAt(i, x, y) {
+    var f = flyers[i];
+    score += f.type === FLYER_SAUCER ? SAUCER_POINTS : BOMBER_POINTS;
+    flyers.splice(i, 1);
+    addExplosion(x, y, f.type === FLYER_SAUCER ? 34 : EXP_MAX_R);
+    updateHud();
   }
 
   function nearestBattery(px) {
@@ -313,6 +380,32 @@
           destroyEnemyAt(j, m.x, m.y);
         }
       }
+      for (j = flyers.length - 1; j >= 0; j--) {
+        var f = flyers[j];
+        var fx = f.x + f.w * 0.5;
+        var fy = f.y + f.h * 0.5;
+        if (dist(fx, fy, e.x, e.y) < e.r) {
+          destroyFlyerAt(j, fx, fy);
+        }
+      }
+    }
+  }
+
+  function updateFlyers() {
+    var i;
+    for (i = flyers.length - 1; i >= 0; i--) {
+      var f = flyers[i];
+      f.x += f.vx;
+      if (f.type === FLYER_BOMBER) {
+        f.dropTimer--;
+        if (f.dropTimer <= 0) {
+          dropBombFromFlyer(f);
+          f.dropTimer = f.dropInterval;
+        }
+      }
+      if (f.x < -40 || f.x > W + 40) {
+        flyers.splice(i, 1);
+      }
     }
   }
 
@@ -364,6 +457,9 @@
     if (enemyMissiles.length > 0) {
       return;
     }
+    if (flyers.length > 0) {
+      return;
+    }
     if (interceptors.length > 0 || explosions.length > 0) {
       return;
     }
@@ -383,6 +479,9 @@
       return;
     }
     if (enemyMissiles.length > 0) {
+      return;
+    }
+    if (flyers.length > 0) {
       return;
     }
     if (totalAmmo() > 0) {
@@ -409,6 +508,16 @@
       }
     }
 
+    if (wave >= 2) {
+      flyerSpawnTimer++;
+      if (flyerSpawnTimer >= flyerSpawnInterval) {
+        flyerSpawnTimer = 0;
+        spawnFlyer();
+        flyerSpawnInterval = Math.max(200, 340 - wave * 18);
+      }
+    }
+
+    updateFlyers();
     updateInterceptors();
     updateEnemies();
     updateExplosions();
@@ -501,6 +610,34 @@
     }
   }
 
+  function drawFlyers() {
+    var i;
+    for (i = 0; i < flyers.length; i++) {
+      var f = flyers[i];
+      if (f.type === FLYER_SAUCER) {
+        ctx.fillStyle = "#f6c";
+        ctx.beginPath();
+        ctx.ellipse(f.x + f.w * 0.5, f.y + f.h * 0.45, f.w * 0.5, f.h * 0.45, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#8ef";
+        ctx.fillRect(f.x + f.w * 0.35, f.y + f.h * 0.15, f.w * 0.3, 3);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(f.x + f.w * 0.42, f.y + f.h * 0.55, 4, 4);
+        ctx.fillRect(f.x + f.w * 0.54, f.y + f.h * 0.55, 4, 4);
+      } else {
+        ctx.fillStyle = "#fa8";
+        ctx.beginPath();
+        ctx.moveTo(f.x + f.w * 0.5, f.y);
+        ctx.lineTo(f.x + f.w, f.y + f.h);
+        ctx.lineTo(f.x, f.y + f.h);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#ffc";
+        ctx.fillRect(f.x + f.w * 0.38, f.y + f.h * 0.55, f.w * 0.24, 3);
+      }
+    }
+  }
+
   function drawMissiles() {
     var i;
     ctx.fillStyle = "#f84";
@@ -542,6 +679,7 @@
   function draw() {
     drawBackground();
     drawGround();
+    drawFlyers();
     drawMissiles();
     drawExplosions();
     if (phase === PHASE_READY && readyTimer > 0) {
@@ -572,7 +710,7 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL MISSILE DEFENSE";
     instructionsEl.textContent =
-      "Click or tap to launch interceptors from the nearest battery. Warheads split when destroyed — time your blasts!";
+      "Click or tap to fire interceptors. Saucers (bonus) and bombers appear from wave 2 — bombers drop warheads!";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -784,14 +922,19 @@
     interceptors = [];
     explosions = [];
     enemyMissiles = [];
+    flyers = [];
     waveSpawnsLeft = waveEnemyCount();
     spawnTimer = 0;
     spawnInterval = Math.max(32, 76 - wave * 5);
+    flyerSpawnTimer = 0;
+    flyerSpawnInterval = Math.max(200, 360 - wave * 20);
     updateHud();
-    beginReadyCountdown(
-      "WAVE " + wave,
-      waveSpawnsLeft + " inbound tracks detected. Click to fire interceptors."
-    );
+    var hint =
+      waveSpawnsLeft + " inbound tracks detected. Click to fire interceptors.";
+    if (wave >= 2) {
+      hint += " Watch for saucers and bomb-dropping craft.";
+    }
+    beginReadyCountdown("WAVE " + wave, hint);
   }
 
   function startGame() {
@@ -824,6 +967,7 @@
     interceptors = [];
     explosions = [];
     enemyMissiles = [];
+    flyers = [];
     setPlayingPointer(false);
     showMessages([]);
     showMenuOverlay();
