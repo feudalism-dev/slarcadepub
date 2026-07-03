@@ -72,18 +72,18 @@
   var MAZE_TEMPLATE = [
     "#####################",
     "#.........#.........#",
-    "#...#.###.#.###.#...#",
+    "#.###.###.#.###.###.#",
     "#o..#.....#.....#..o#",
-    "#...#.#.#   #.#.#...#",
-    "#...#.#.#   #.#.#...#",
-    "#.#####.#   #.#####.#",
-    "#.......# g #.......#",
-    "#.#####.#   #.#####.#",
-    ". ...#.#.#   #.#.#....",
-    "#...#.#.#   #.#.#...#",
-    "###.#.#.#####.#.#.###",
+    "#.###.#.###.#.###.#.#",
+    "#.....#.....#.....#.#",
+    "#.###.#.......#.###.#",
+    "#.....#..g..#.....#.#",
+    "#.###.#.#####.#.###.#",
+    ".....#.....#.........",
+    "#.###.#.###.#.###.#.#",
     "#o..#.....#.....#..o#",
     "#.###.###.#.###.###.#",
+    "#.........#.........#",
     "#.........#.........#",
     "#####################",
   ];
@@ -186,6 +186,74 @@
     return out;
   }
 
+  function mazeNeighbors(c, r) {
+    var out = [];
+    var d;
+    for (d = 1; d <= 4; d++) {
+      var nc = c + DX[d];
+      var nr = r + DY[d];
+      if (r === TUNNEL_ROW && nr === r) {
+        if (nc < 0) {
+          nc = COLS - 1;
+        } else if (nc >= COLS) {
+          nc = 0;
+        }
+      }
+      if (canWalk(nc, nr)) {
+        out.push({ c: nc, r: nr });
+      }
+    }
+    return out;
+  }
+
+  function validateMazeTemplate() {
+    var errors = [];
+    var r;
+    var c;
+    if (MAZE_TEMPLATE.length !== ROWS) {
+      errors.push("MAZE_TEMPLATE row count mismatch");
+    }
+    for (r = 0; r < MAZE_TEMPLATE.length; r++) {
+      if (MAZE_TEMPLATE[r].length !== COLS) {
+        errors.push("row " + r + " width " + MAZE_TEMPLATE[r].length);
+      }
+    }
+    var mazeCheck = cloneMaze();
+    var seen = {};
+    var queue = [{ c: 9, r: 14 }];
+    seen["9,14"] = true;
+    while (queue.length) {
+      var cur = queue.shift();
+      var nbrs = mazeNeighbors(cur.c, cur.r);
+      var i;
+      for (i = 0; i < nbrs.length; i++) {
+        var n = nbrs[i];
+        var key = n.c + "," + n.r;
+        if (seen[key]) {
+          continue;
+        }
+        seen[key] = true;
+        queue.push(n);
+      }
+    }
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        var t = mazeCheck[r][c];
+        if ((t === "." || t === "o") && !seen[c + "," + r]) {
+          errors.push("unreachable pellet " + c + "," + r);
+        }
+      }
+    }
+    if (MAZE_TEMPLATE[TUNNEL_ROW].charAt(0) === "#" ||
+        MAZE_TEMPLATE[TUNNEL_ROW].charAt(COLS - 1) === "#") {
+      errors.push("tunnel row blocked");
+    }
+    if (errors.length) {
+      console.error("Munchman maze validation failed:", errors);
+    }
+    return errors.length === 0;
+  }
+
   function countDots() {
     var n = 0;
     var r;
@@ -225,14 +293,15 @@
   }
 
   function initLevel() {
+    validateMazeTemplate();
     maze = cloneMaze();
     dotsLeft = countDots();
     player = findStart(9, 14, DIR_LEFT);
     ghosts = [
-      makeGhost(9, 8, DIR_UP, 0, true),
-      makeGhost(11, 8, DIR_UP, 1, true),
-      makeGhost(10, 8, DIR_UP, 2, true),
-      makeGhost(10, 7, DIR_UP, 3, true),
+      makeGhost(8, 7, DIR_UP, 0, true),
+      makeGhost(10, 7, DIR_UP, 1, true),
+      makeGhost(9, 7, DIR_UP, 2, true),
+      makeGhost(11, 7, DIR_UP, 3, true),
     ];
     ghostMode = MODE_SCATTER;
     modeTimer = 0;
@@ -612,8 +681,8 @@
     var i;
     for (i = 0; i < ghosts.length; i++) {
       ghosts[i] = makeGhost(
-        i % 2 === 0 ? 9 : 11,
-        i < 2 ? 8 : 7,
+        i === 0 ? 8 : i === 1 ? 10 : i === 2 ? 9 : 11,
+        7,
         DIR_UP,
         i,
         true
