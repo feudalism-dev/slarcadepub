@@ -150,14 +150,38 @@
     return t === "#";
   }
 
-  function canWalk(c, r) {
+  function canWalkOn(grid, c, r) {
     if (r === TUNNEL_ROW && (c < 0 || c >= COLS)) {
       return true;
     }
     if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
       return false;
     }
-    return maze[r][c] !== "#";
+    return grid[r][c] !== "#";
+  }
+
+  function canWalk(c, r) {
+    return canWalkOn(maze, c, r);
+  }
+
+  function mazeNeighborsOn(grid, c, r) {
+    var out = [];
+    var d;
+    for (d = 1; d <= 4; d++) {
+      var nc = c + DX[d];
+      var nr = r + DY[d];
+      if (r === TUNNEL_ROW && nr === r) {
+        if (nc < 0) {
+          nc = COLS - 1;
+        } else if (nc >= COLS) {
+          nc = 0;
+        }
+      }
+      if (canWalkOn(grid, nc, nr)) {
+        out.push({ c: nc, r: nr });
+      }
+    }
+    return out;
   }
 
   function wrapCol(c) {
@@ -187,23 +211,7 @@
   }
 
   function mazeNeighbors(c, r) {
-    var out = [];
-    var d;
-    for (d = 1; d <= 4; d++) {
-      var nc = c + DX[d];
-      var nr = r + DY[d];
-      if (r === TUNNEL_ROW && nr === r) {
-        if (nc < 0) {
-          nc = COLS - 1;
-        } else if (nc >= COLS) {
-          nc = 0;
-        }
-      }
-      if (canWalk(nc, nr)) {
-        out.push({ c: nc, r: nr });
-      }
-    }
-    return out;
+    return mazeNeighborsOn(maze, c, r);
   }
 
   function validateMazeTemplate() {
@@ -224,7 +232,7 @@
     seen["9,14"] = true;
     while (queue.length) {
       var cur = queue.shift();
-      var nbrs = mazeNeighbors(cur.c, cur.r);
+      var nbrs = mazeNeighborsOn(mazeCheck, cur.c, cur.r);
       var i;
       for (i = 0; i < nbrs.length; i++) {
         var n = nbrs[i];
@@ -293,8 +301,8 @@
   }
 
   function initLevel() {
-    validateMazeTemplate();
     maze = cloneMaze();
+    validateMazeTemplate();
     dotsLeft = countDots();
     player = findStart(9, 14, DIR_LEFT);
     ghosts = [
