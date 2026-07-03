@@ -12,6 +12,7 @@ https://feudalism-dev.github.io/slarcadepub/games/<id>/
 |----|-------|-------------|
 | `invaders` | SL Invaders | `Arcade_Controller.lsl` + `Arcade_Scores.lsl` |
 | `galaslian` | GalaSLian | `Galaslian_Controller.lsl` + `Galaslian_Scores.lsl` |
+| `missiledefense` | SL Missile Defense | `MissileDefense_Controller.lsl` + `MissileDefense_Scores.lsl` |
 
 ## Checklist
 
