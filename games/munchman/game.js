@@ -573,8 +573,9 @@
       if (frightenedTimer === 0) {
         var i;
         for (i = 0; i < ghosts.length; i++) {
-          ghosts[i].eaten = false;
-          ghosts[i].speed = ghostSpeed(false);
+          if (!ghosts[i].eaten) {
+            ghosts[i].speed = ghostSpeed(false);
+          }
         }
       }
       return;
@@ -642,7 +643,7 @@
     var i;
     for (i = 0; i < ghosts.length; i++) {
       var g = ghosts[i];
-      if (g.inPen) {
+      if (g.inPen || g.eaten) {
         continue;
       }
       var d = Math.abs(g.x - player.x) + Math.abs(g.y - player.y);
