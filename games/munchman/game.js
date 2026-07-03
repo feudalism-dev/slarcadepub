@@ -70,9 +70,9 @@
     "#o..#.....#.....#..o#",
     "###.#.#.#####.#.#.###",
     "#...#.#.#   #.#.#...#",
-    "#.#####.# # #.#####.#",
+    "#.#####.#   #.#####.#",
     "#.......# g #.......#",
-    "#.#####.# # #.#####.#",
+    "#.#####.#   #.#####.#",
     "#...#.#.#   #.#.#...#",
     "###.#.#.#####.#.#.###",
     "#o..#.....#.....#..o#",
@@ -202,14 +202,14 @@
   }
 
   function playerSpeed() {
-    return 2.0 + level * 0.15;
+    return 0.68 + level * 0.035;
   }
 
   function ghostSpeed(frightened) {
     if (frightened) {
-      return 1.2 + level * 0.05;
+      return 0.52 + level * 0.02;
     }
-    return 1.6 + level * 0.12;
+    return 0.62 + level * 0.03;
   }
 
   function initLevel() {
@@ -217,10 +217,10 @@
     dotsLeft = countDots();
     player = findStart(9, 13, DIR_LEFT);
     ghosts = [
-      makeGhost(10, 7, DIR_UP, 0, true),
-      makeGhost(9, 7, DIR_UP, 1, true),
-      makeGhost(11, 7, DIR_UP, 2, true),
-      makeGhost(10, 8, DIR_UP, 3, true),
+      makeGhost(9, 8, DIR_UP, 0, true),
+      makeGhost(11, 8, DIR_UP, 1, true),
+      makeGhost(10, 8, DIR_UP, 2, true),
+      makeGhost(10, 7, DIR_UP, 3, true),
     ];
     ghostMode = MODE_SCATTER;
     modeTimer = 0;
@@ -237,7 +237,8 @@
       dir: dir,
       idx: idx,
       inPen: inPen,
-      releaseTimer: 90 + idx * 80,
+      exiting: false,
+      releaseTimer: 120 + idx * 100,
       eaten: false,
       speed: ghostSpeed(false),
     };
@@ -306,7 +307,8 @@
     } else {
       target = { c: player.c, r: player.r };
       if (g.idx === 1) {
-        target = { c: player.c + DX[player.dir] * 4, r: player.r + DY[player.dir] * 4 };
+        var leadDir = player.dir || player.nextDir || DIR_LEFT;
+        target = { c: player.c + DX[leadDir] * 4, r: player.r + DY[leadDir] * 4 };
       } else if (g.idx === 2) {
         target = { c: player.c, r: player.r };
       } else if (g.idx === 3) {
@@ -335,7 +337,7 @@
 
   function atTileCenter(actor) {
     var p = tileCenter(actor.c, actor.r);
-    return Math.abs(actor.x - p.x) < 1.5 && Math.abs(actor.y - p.y) < 1.5;
+    return Math.abs(actor.x - p.x) < 2.5 && Math.abs(actor.y - p.y) < 2.5;
   }
 
   function snapActor(actor) {
@@ -344,30 +346,68 @@
     actor.y = p.y;
   }
 
+  function snapIfNearCenter(actor) {
+    var p = tileCenter(actor.c, actor.r);
+    if (Math.abs(actor.x - p.x) < actor.speed + 1) {
+      actor.x = p.x;
+    }
+    if (Math.abs(actor.y - p.y) < actor.speed + 1) {
+      actor.y = p.y;
+    }
+  }
+
+  function chooseDirAtTile(actor, isPlayer) {
+    if (!atTileCenter(actor)) {
+      snapIfNearCenter(actor);
+    }
+    if (!atTileCenter(actor)) {
+      return;
+    }
+    if (isPlayer) {
+      if (actor.nextDir) {
+        var nc = actor.c + DX[actor.nextDir];
+        var nr = actor.r + DY[actor.nextDir];
+        if (canWalk(nc, nr)) {
+          actor.dir = actor.nextDir;
+          return;
+        }
+      }
+      if (actor.dir) {
+        var fc = actor.c + DX[actor.dir];
+        var fr = actor.r + DY[actor.dir];
+        if (!canWalk(fc, fr)) {
+          actor.dir = DIR_NONE;
+        }
+      }
+      return;
+    }
+    if (actor.exiting || actor.eaten) {
+      actor.dir = DIR_UP;
+      return;
+    }
+    actor.dir = pickGhostDir(actor);
+    actor.speed = ghostSpeed(frightenedTimer > 0 && !actor.eaten);
+  }
+
   function moveActor(actor, isPlayer) {
+    chooseDirAtTile(actor, isPlayer);
     if (!actor.dir) {
       return;
     }
+
     var spd = actor.speed;
     actor.x += DX[actor.dir] * spd;
     actor.y += DY[actor.dir] * spd;
 
-    var p = tileCenter(actor.c, actor.r);
-    var crossed =
-      (actor.dir === DIR_RIGHT && actor.x >= p.x) ||
-      (actor.dir === DIR_LEFT && actor.x <= p.x) ||
-      (actor.dir === DIR_DOWN && actor.y >= p.y) ||
-      (actor.dir === DIR_UP && actor.y <= p.y);
-
-    if (!crossed) {
-      return;
-    }
-
     var nc = actor.c + DX[actor.dir];
     var nr = actor.r + DY[actor.dir];
+
     if (nr === 7 && (nc < 0 || nc >= COLS)) {
       actor.c = wrapCol(nc);
       snapActor(actor);
+      if (isPlayer) {
+        eatAt(actor.c, actor.r);
+      }
       return;
     }
 
@@ -377,18 +417,22 @@
       return;
     }
 
+    var target = tileCenter(nc, nr);
+    var reached =
+      (actor.dir === DIR_RIGHT && actor.x >= target.x) ||
+      (actor.dir === DIR_LEFT && actor.x <= target.x) ||
+      (actor.dir === DIR_DOWN && actor.y >= target.y) ||
+      (actor.dir === DIR_UP && actor.y <= target.y);
+
+    if (!reached) {
+      return;
+    }
+
     actor.c = nc;
     actor.r = nr;
     snapActor(actor);
-
     if (isPlayer) {
-      if (actor.nextDir && canWalk(actor.c + DX[actor.nextDir], actor.r + DY[actor.nextDir])) {
-        actor.dir = actor.nextDir;
-      }
       eatAt(actor.c, actor.r);
-    } else if (atTileCenter(actor)) {
-      actor.dir = pickGhostDir(actor);
-      actor.speed = ghostSpeed(frightenedTimer > 0 && !actor.eaten);
     }
   }
 
@@ -444,34 +488,36 @@
     for (i = 0; i < ghosts.length; i++) {
       var g = ghosts[i];
       if (g.eaten) {
-        g.speed = 3.5;
+        g.speed = 1.1;
+        g.dir = DIR_UP;
         moveActor(g, false);
-        if (g.c === 10 && g.r === 7) {
+        if (g.r <= 7 && g.c >= 9 && g.c <= 11) {
           g.eaten = false;
           g.inPen = true;
-          g.releaseTimer = 60;
+          g.exiting = false;
+          g.releaseTimer = 90;
           g.speed = ghostSpeed(false);
         }
         continue;
       }
-      if (g.inPen) {
+      if (g.inPen && !g.exiting) {
         g.releaseTimer--;
+        g.dir = DIR_NONE;
+        snapActor(g);
+        g.y += Math.sin(frame * 0.1 + g.idx * 1.7) * 0.25;
         if (g.releaseTimer <= 0) {
-          g.inPen = false;
+          g.exiting = true;
           g.dir = DIR_UP;
-        } else {
-          if (g.c !== 10) {
-            g.c = 10;
-            snapActor(g);
-          }
-          g.y += Math.sin(frame * 0.12 + g.idx) * 0.6;
-          continue;
         }
+        continue;
       }
-      if (g.dir === DIR_NONE || atTileCenter(g)) {
-        if (g.dir === DIR_NONE) {
-          g.dir = pickGhostDir(g);
+      if (g.inPen && g.exiting) {
+        moveActor(g, false);
+        if (g.r <= 5) {
+          g.inPen = false;
+          g.exiting = false;
         }
+        continue;
       }
       moveActor(g, false);
     }
@@ -543,7 +589,13 @@
     player = findStart(9, 13, DIR_LEFT);
     var i;
     for (i = 0; i < ghosts.length; i++) {
-      ghosts[i] = makeGhost(10, 7, DIR_LEFT, i, i > 0);
+      ghosts[i] = makeGhost(
+        i % 2 === 0 ? 9 : 11,
+        i < 2 ? 8 : 7,
+        DIR_UP,
+        i,
+        true
+      );
     }
     frightenedTimer = 0;
     ghostMode = MODE_SCATTER;
