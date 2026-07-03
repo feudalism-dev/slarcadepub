@@ -30,17 +30,16 @@
 
   var COLS = 21;
   var ROWS = 15;
-  var HUD_PAD_TOP = 28;
-  var HUD_PAD_BOTTOM = 20;
+  var BOTTOM_PAD = 12;
   var TILE = 32;
-  var maxMazeH = H - HUD_PAD_TOP - HUD_PAD_BOTTOM;
+  var maxMazeH = H - BOTTOM_PAD;
   if (ROWS * TILE > maxMazeH) {
     TILE = Math.floor(maxMazeH / ROWS);
   }
   var MAZE_W = COLS * TILE;
   var MAZE_H = ROWS * TILE;
   var OFF_X = Math.floor((W - MAZE_W) / 2);
-  var OFF_Y = HUD_PAD_TOP;
+  var OFF_Y = 0;
 
   var DIR_NONE = 0;
   var DIR_UP = 1;
@@ -733,15 +732,15 @@
       } else {
         ctx.fillStyle = GHOST_COLORS[g.idx];
       }
+      var gy = g.y - 2;
+      var feet = gy + radius * 0.9;
       ctx.beginPath();
-      ctx.arc(g.x, g.y - 2, radius, Math.PI, 0);
-      ctx.lineTo(g.x + radius, g.y + radius);
-      var wobble;
-      for (wobble = 3; wobble >= 0; wobble--) {
-        var wx = g.x + radius - (wobble * radius * 0.5);
-        var wy = g.y + radius + (wobble % 2 ? 2 : -2);
-        ctx.lineTo(wx, wy);
-      }
+      ctx.arc(g.x, gy, radius, Math.PI, 0);
+      ctx.lineTo(g.x + radius, feet);
+      ctx.lineTo(g.x + radius * 0.5, feet - 5);
+      ctx.lineTo(g.x, feet + 1);
+      ctx.lineTo(g.x - radius * 0.5, feet - 5);
+      ctx.lineTo(g.x - radius, feet);
       ctx.closePath();
       ctx.fill();
       if (!g.eaten && !(frightenedTimer > 0)) {
