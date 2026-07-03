@@ -29,17 +29,18 @@
   var H = canvas.height;
 
   var COLS = 21;
-  var ROWS = 15;
-  var BOTTOM_PAD = 12;
-  var TILE = 32;
-  var maxMazeH = H - BOTTOM_PAD;
-  if (ROWS * TILE > maxMazeH) {
-    TILE = Math.floor(maxMazeH / ROWS);
+  var ROWS = 16;
+  var TUNNEL_ROW = 9;
+  var BOTTOM_PAD = 8;
+  var TOP_PAD = 22;
+  var TILE = Math.floor((H - TOP_PAD - BOTTOM_PAD) / ROWS);
+  if (TILE < 10) {
+    TILE = 10;
   }
   var MAZE_W = COLS * TILE;
   var MAZE_H = ROWS * TILE;
   var OFF_X = Math.floor((W - MAZE_W) / 2);
-  var OFF_Y = 0;
+  var OFF_Y = TOP_PAD;
 
   var DIR_NONE = 0;
   var DIR_UP = 1;
@@ -78,7 +79,7 @@
     "#.#####.#   #.#####.#",
     "#.......# g #.......#",
     "#.#####.#   #.#####.#",
-    "#...#.#.#   #.#.#...#",
+    ". ...#.#.#   #.#.#....",
     "#...#.#.#   #.#.#...#",
     "###.#.#.#####.#.#.###",
     "#o..#.....#.....#..o#",
@@ -150,8 +151,13 @@
   }
 
   function canWalk(c, r) {
-    var t = tileAt(c, r);
-    return t !== "#";
+    if (r === TUNNEL_ROW && (c < 0 || c >= COLS)) {
+      return true;
+    }
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
+      return false;
+    }
+    return maze[r][c] !== "#";
   }
 
   function wrapCol(c) {
@@ -221,7 +227,7 @@
   function initLevel() {
     maze = cloneMaze();
     dotsLeft = countDots();
-    player = findStart(9, 13, DIR_LEFT);
+    player = findStart(9, 14, DIR_LEFT);
     ghosts = [
       makeGhost(9, 8, DIR_UP, 0, true),
       makeGhost(11, 8, DIR_UP, 1, true),
@@ -260,7 +266,7 @@
       var nc = c + DX[d];
       var nr = r + DY[d];
       if (nc < 0 || nc >= COLS) {
-        if (r === 7 && (nc < 0 || nc >= COLS)) {
+        if (r === TUNNEL_ROW) {
           out.push(d);
         }
         continue;
@@ -408,13 +414,23 @@
     var nc = actor.c + DX[actor.dir];
     var nr = actor.r + DY[actor.dir];
 
-    if (nr === 7 && (nc < 0 || nc >= COLS)) {
-      actor.c = wrapCol(nc);
-      snapActor(actor);
-      if (isPlayer) {
-        eatAt(actor.c, actor.r);
+    if (actor.r === TUNNEL_ROW && (actor.dir === DIR_LEFT || actor.dir === DIR_RIGHT)) {
+      if (actor.x < OFF_X - 2) {
+        actor.c = COLS - 1;
+        snapActor(actor);
+        if (isPlayer) {
+          eatAt(actor.c, actor.r);
+        }
+        return;
       }
-      return;
+      if (actor.x > OFF_X + COLS * TILE + 2) {
+        actor.c = 0;
+        snapActor(actor);
+        if (isPlayer) {
+          eatAt(actor.c, actor.r);
+        }
+        return;
+      }
     }
 
     if (!canWalk(nc, nr)) {
@@ -592,7 +608,7 @@
       return;
     }
     clearContinueTimer();
-    player = findStart(9, 13, DIR_LEFT);
+    player = findStart(9, 14, DIR_LEFT);
     var i;
     for (i = 0; i < ghosts.length; i++) {
       ghosts[i] = makeGhost(
