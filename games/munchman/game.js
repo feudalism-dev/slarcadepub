@@ -67,7 +67,7 @@
     "#####################",
     "#.........#.........#",
     "#.###.###.#.###.###.#",
-    "#o...#.....#.....#..o#",
+    "#o..#....#.....#..o#",
     "###.#.#.#####.#.#.###",
     "#...#.#.#   #.#.#...#",
     "#.#####.# # #.#####.#",
@@ -215,12 +215,12 @@
   function initLevel() {
     maze = cloneMaze();
     dotsLeft = countDots();
-    player = findStart(10, 13, DIR_LEFT);
+    player = findStart(9, 13, DIR_LEFT);
     ghosts = [
-      makeGhost(10, 7, DIR_LEFT, 0, false),
+      makeGhost(10, 7, DIR_UP, 0, true),
       makeGhost(9, 7, DIR_UP, 1, true),
-      makeGhost(10, 7, DIR_UP, 2, true),
-      makeGhost(11, 7, DIR_UP, 3, true),
+      makeGhost(11, 7, DIR_UP, 2, true),
+      makeGhost(10, 8, DIR_UP, 3, true),
     ];
     ghostMode = MODE_SCATTER;
     modeTimer = 0;
@@ -540,7 +540,7 @@
       return;
     }
     clearContinueTimer();
-    player = findStart(10, 13, DIR_LEFT);
+    player = findStart(9, 13, DIR_LEFT);
     var i;
     for (i = 0; i < ghosts.length; i++) {
       ghosts[i] = makeGhost(10, 7, DIR_LEFT, i, i > 0);
@@ -605,6 +605,9 @@
   }
 
   function drawMaze() {
+    if (!maze.length) {
+      return;
+    }
     var r;
     var c;
     for (r = 0; r < ROWS; r++) {
@@ -696,8 +699,10 @@
   function draw() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, W, H);
-    drawMaze();
-    if (phase !== PHASE_MENU && phase !== PHASE_OVER) {
+    if (maze.length) {
+      drawMaze();
+    }
+    if (phase !== PHASE_MENU && phase !== PHASE_OVER && player) {
       drawGhosts();
       drawPlayer();
     }
@@ -708,8 +713,12 @@
   }
 
   function loop() {
-    update();
-    draw();
+    try {
+      update();
+      draw();
+    } catch (err) {
+      console.error("Munchman loop error:", err);
+    }
     requestAnimationFrame(loop);
   }
 
