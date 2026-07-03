@@ -183,7 +183,10 @@
     if (wave < 2) {
       return 0;
     }
-    return 1 + Math.floor((wave - 1) / 2);
+    if (wave < 4) {
+      return 1;
+    }
+    return 1 + Math.floor((wave - 3) / 2);
   }
 
   function spawnFlyer() {
@@ -191,7 +194,7 @@
       return;
     }
     var fromLeft = Math.random() < 0.5;
-    var isSaucer = Math.random() < 0.38;
+    var isSaucer = wave >= 4 && Math.random() < 0.42;
     var y = 44 + Math.random() * 48;
     var speed = isSaucer ? 2.4 + wave * 0.08 : 1.1 + wave * 0.06;
     if (!fromLeft) {
@@ -710,7 +713,7 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL MISSILE DEFENSE";
     instructionsEl.textContent =
-      "Click or tap to fire interceptors. Saucers (bonus) and bombers appear from wave 2 — bombers drop warheads!";
+      "Click or tap to fire interceptors. Bombers from wave 2; bonus saucers from wave 4.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
