@@ -21,6 +21,13 @@
       "description": "Defend six cities from incoming warheads — Missile Command-style action.",
       "url": "games/missiledefense/",
       "status": "available"
+    },
+    {
+      "id": "munchman",
+      "title": "Munchman",
+      "description": "Chomp dots, dodge ghosts, clear the maze — Pac-Man-style arcade action.",
+      "url": "games/munchman/",
+      "status": "available"
     }
   ]
 }

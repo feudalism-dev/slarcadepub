@@ -1,0 +1,1047 @@
+(function () {
+  "use strict";
+
+  SLArcade.registerGameId("munchman");
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  var overlay = document.getElementById("overlay");
+  var overlayTitle = document.getElementById("overlay-title");
+  var btnStart = document.getElementById("btn-start");
+  var btnNext = document.getElementById("btn-next");
+  var btnQuit = document.getElementById("btn-quit");
+  var btnLeaderboard = document.getElementById("btn-leaderboard");
+  var btnModalClose = document.getElementById("btn-modal-close");
+  var hud = document.getElementById("hud");
+  var startScoresEl = document.getElementById("start-scores");
+  var personalEl = document.getElementById("personal-score");
+  var highScoreEl = document.getElementById("high-score");
+  var unavailableEl = document.getElementById("scores-unavailable");
+  var leaderboardEl = document.getElementById("leaderboard");
+  var leaderboardModal = document.getElementById("leaderboard-modal");
+  var messagesEl = document.getElementById("game-messages");
+  var playerLine = document.getElementById("player-line");
+  var instructionsEl = document.getElementById("instructions");
+  var endHintEl = document.getElementById("end-hint");
+
+  var W = canvas.width;
+  var H = canvas.height;
+
+  var COLS = 21;
+  var ROWS = 15;
+  var TILE = 32;
+  var MAZE_W = COLS * TILE;
+  var MAZE_H = ROWS * TILE;
+  var OFF_X = Math.floor((W - MAZE_W) / 2);
+  var OFF_Y = Math.floor((H - MAZE_H) / 2) + 8;
+
+  var DIR_NONE = 0;
+  var DIR_UP = 1;
+  var DIR_LEFT = 2;
+  var DIR_DOWN = 3;
+  var DIR_RIGHT = 4;
+  var DX = [0, 0, -1, 0, 1];
+  var DY = [0, -1, 0, 1, 0];
+
+  var PHASE_MENU = "menu";
+  var PHASE_READY = "ready";
+  var PHASE_PLAYING = "playing";
+  var PHASE_LEVEL = "levelComplete";
+  var PHASE_DIED = "died";
+  var PHASE_OVER = "gameOver";
+
+  var MODE_SCATTER = "scatter";
+  var MODE_CHASE = "chase";
+  var MODE_FRIGHTENED = "frightened";
+
+  var READY_FRAMES = 120;
+  var STARTING_LIVES = 3;
+  var CONTINUE_TIMEOUT_MS = 30000;
+  var FRIGHTEN_FRAMES = 420;
+  var DOT_POINTS = 10;
+  var POWER_POINTS = 50;
+  var GHOST_BASE_POINTS = 200;
+
+  var MAZE_TEMPLATE = [
+    "#####################",
+    "#.........#.........#",
+    "#.###.###.#.###.###.#",
+    "#o...#.....#.....#..o#",
+    "###.#.#.#####.#.#.###",
+    "#...#.#.#   #.#.#...#",
+    "#.#####.# # #.#####.#",
+    "#.......# g #.......#",
+    "#.#####.# # #.#####.#",
+    "#...#.#.#   #.#.#...#",
+    "###.#.#.#####.#.#.###",
+    "#o..#.....#.....#..o#",
+    "#.###.###.#.###.###.#",
+    "#.........#.........#",
+    "#####################",
+  ];
+
+  var SCATTER_CORNERS = [
+    { c: 1, r: 1 },
+    { c: COLS - 2, r: 1 },
+    { c: 1, r: ROWS - 2 },
+    { c: COLS - 2, r: ROWS - 2 },
+  ];
+
+  var GHOST_COLORS = ["#f44", "#ffb8de", "#0ff", "#ffb852"];
+  var GHOST_NAMES = ["Crimson", "Rose", "Azure", "Amber"];
+
+  var keys = {};
+  var phase = PHASE_MENU;
+  var running = false;
+  var score = 0;
+  var lives = 3;
+  var level = 1;
+  var frame = 0;
+  var readyTimer = 0;
+  var animFrame = 0;
+  var continueDeadline = 0;
+  var continueTimerId = null;
+  var lastLeaderboardData = null;
+
+  var maze = [];
+  var dotsLeft = 0;
+  var player = null;
+  var ghosts = [];
+  var ghostMode = MODE_SCATTER;
+  var modeTimer = 0;
+  var frightenedTimer = 0;
+  var ghostCombo = 0;
+  var mouthFrame = 0;
+
+  function setOverlayButtons(showStart, showNext) {
+    btnStart.classList.toggle("hidden", !showStart);
+    btnNext.classList.toggle("hidden", !showNext);
+  }
+
+  function setStartScreenExtras(visible) {
+    startScoresEl.classList.toggle("hidden", !visible);
+    btnLeaderboard.classList.toggle("hidden", !visible);
+    if (!visible) {
+      closeLeaderboardModal();
+    }
+  }
+
+  function setQuitVisible(visible) {
+    btnQuit.classList.toggle("hidden", !visible);
+  }
+
+  function tileAt(c, r) {
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
+      return "#";
+    }
+    return maze[r][c];
+  }
+
+  function isWall(c, r) {
+    var t = tileAt(c, r);
+    return t === "#";
+  }
+
+  function canWalk(c, r) {
+    var t = tileAt(c, r);
+    return t !== "#";
+  }
+
+  function wrapCol(c) {
+    if (c < 0) {
+      return COLS - 1;
+    }
+    if (c >= COLS) {
+      return 0;
+    }
+    return c;
+  }
+
+  function tileCenter(c, r) {
+    return {
+      x: OFF_X + c * TILE + TILE * 0.5,
+      y: OFF_Y + r * TILE + TILE * 0.5,
+    };
+  }
+
+  function cloneMaze() {
+    var out = [];
+    var r;
+    for (r = 0; r < ROWS; r++) {
+      out.push(MAZE_TEMPLATE[r].split(""));
+    }
+    return out;
+  }
+
+  function countDots() {
+    var n = 0;
+    var r;
+    var c;
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        if (maze[r][c] === "." || maze[r][c] === "o") {
+          n++;
+        }
+      }
+    }
+    return n;
+  }
+
+  function findStart(col, row, dir) {
+    var p = tileCenter(col, row);
+    return {
+      c: col,
+      r: row,
+      x: p.x,
+      y: p.y,
+      dir: dir,
+      nextDir: dir,
+      speed: playerSpeed(),
+    };
+  }
+
+  function playerSpeed() {
+    return 2.0 + level * 0.15;
+  }
+
+  function ghostSpeed(frightened) {
+    if (frightened) {
+      return 1.2 + level * 0.05;
+    }
+    return 1.6 + level * 0.12;
+  }
+
+  function initLevel() {
+    maze = cloneMaze();
+    dotsLeft = countDots();
+    player = findStart(10, 13, DIR_LEFT);
+    ghosts = [
+      makeGhost(10, 7, DIR_LEFT, 0, false),
+      makeGhost(9, 7, DIR_UP, 1, true),
+      makeGhost(10, 7, DIR_UP, 2, true),
+      makeGhost(11, 7, DIR_UP, 3, true),
+    ];
+    ghostMode = MODE_SCATTER;
+    modeTimer = 0;
+    frightenedTimer = 0;
+    ghostCombo = 0;
+  }
+
+  function makeGhost(c, r, dir, idx, inPen) {
+    return {
+      c: c,
+      r: r,
+      x: tileCenter(c, r).x,
+      y: tileCenter(c, r).y,
+      dir: dir,
+      idx: idx,
+      inPen: inPen,
+      releaseTimer: 90 + idx * 80,
+      eaten: false,
+      speed: ghostSpeed(false),
+    };
+  }
+
+  function validDirs(c, r, forbid) {
+    var out = [];
+    var d;
+    for (d = 1; d <= 4; d++) {
+      if (d === forbid) {
+        continue;
+      }
+      var nc = c + DX[d];
+      var nr = r + DY[d];
+      if (nc < 0 || nc >= COLS) {
+        if (r === 7 && (nc < 0 || nc >= COLS)) {
+          out.push(d);
+        }
+        continue;
+      }
+      if (canWalk(nc, nr)) {
+        out.push(d);
+      }
+    }
+    return out;
+  }
+
+  function oppositeDir(d) {
+    if (d === DIR_UP) {
+      return DIR_DOWN;
+    }
+    if (d === DIR_DOWN) {
+      return DIR_UP;
+    }
+    if (d === DIR_LEFT) {
+      return DIR_RIGHT;
+    }
+    if (d === DIR_RIGHT) {
+      return DIR_LEFT;
+    }
+    return DIR_NONE;
+  }
+
+  function dist2(c1, r1, c2, r2) {
+    var dc = c1 - c2;
+    var dr = r1 - r2;
+    return dc * dc + dr * dr;
+  }
+
+  function pickGhostDir(g) {
+    var opts = validDirs(g.c, g.r, oppositeDir(g.dir));
+    if (!opts.length) {
+      return oppositeDir(g.dir) || g.dir;
+    }
+    if (opts.length === 1) {
+      return opts[0];
+    }
+
+    var target;
+    if (frightenedTimer > 0 && !g.eaten) {
+      return opts[Math.floor(Math.random() * opts.length)];
+    }
+
+    if (ghostMode === MODE_SCATTER) {
+      target = SCATTER_CORNERS[g.idx];
+    } else {
+      target = { c: player.c, r: player.r };
+      if (g.idx === 1) {
+        target = { c: player.c + DX[player.dir] * 4, r: player.r + DY[player.dir] * 4 };
+      } else if (g.idx === 2) {
+        target = { c: player.c, r: player.r };
+      } else if (g.idx === 3) {
+        if (dist2(g.c, g.r, player.c, player.r) > 36) {
+          target = { c: player.c, r: player.r };
+        } else {
+          target = SCATTER_CORNERS[3];
+        }
+      }
+    }
+
+    var best = opts[0];
+    var bestD = 1e9;
+    var i;
+    for (i = 0; i < opts.length; i++) {
+      var nc = g.c + DX[opts[i]];
+      var nr = g.r + DY[opts[i]];
+      var d = dist2(nc, nr, target.c, target.r);
+      if (d < bestD) {
+        bestD = d;
+        best = opts[i];
+      }
+    }
+    return best;
+  }
+
+  function atTileCenter(actor) {
+    var p = tileCenter(actor.c, actor.r);
+    return Math.abs(actor.x - p.x) < 1.5 && Math.abs(actor.y - p.y) < 1.5;
+  }
+
+  function snapActor(actor) {
+    var p = tileCenter(actor.c, actor.r);
+    actor.x = p.x;
+    actor.y = p.y;
+  }
+
+  function moveActor(actor, isPlayer) {
+    if (!actor.dir) {
+      return;
+    }
+    var spd = actor.speed;
+    actor.x += DX[actor.dir] * spd;
+    actor.y += DY[actor.dir] * spd;
+
+    var p = tileCenter(actor.c, actor.r);
+    var crossed =
+      (actor.dir === DIR_RIGHT && actor.x >= p.x) ||
+      (actor.dir === DIR_LEFT && actor.x <= p.x) ||
+      (actor.dir === DIR_DOWN && actor.y >= p.y) ||
+      (actor.dir === DIR_UP && actor.y <= p.y);
+
+    if (!crossed) {
+      return;
+    }
+
+    var nc = actor.c + DX[actor.dir];
+    var nr = actor.r + DY[actor.dir];
+    if (nr === 7 && (nc < 0 || nc >= COLS)) {
+      actor.c = wrapCol(nc);
+      snapActor(actor);
+      return;
+    }
+
+    if (!canWalk(nc, nr)) {
+      snapActor(actor);
+      actor.dir = DIR_NONE;
+      return;
+    }
+
+    actor.c = nc;
+    actor.r = nr;
+    snapActor(actor);
+
+    if (isPlayer) {
+      if (actor.nextDir && canWalk(actor.c + DX[actor.nextDir], actor.r + DY[actor.nextDir])) {
+        actor.dir = actor.nextDir;
+      }
+      eatAt(actor.c, actor.r);
+    } else if (atTileCenter(actor)) {
+      actor.dir = pickGhostDir(actor);
+      actor.speed = ghostSpeed(frightenedTimer > 0 && !actor.eaten);
+    }
+  }
+
+  function eatAt(c, r) {
+    var t = maze[r][c];
+    if (t === ".") {
+      maze[r][c] = " ";
+      score += DOT_POINTS;
+      dotsLeft--;
+      updateHud();
+    } else if (t === "o") {
+      maze[r][c] = " ";
+      score += POWER_POINTS;
+      dotsLeft--;
+      frightenedTimer = FRIGHTEN_FRAMES;
+      ghostCombo = 0;
+      var i;
+      for (i = 0; i < ghosts.length; i++) {
+        if (!ghosts[i].eaten) {
+          ghosts[i].dir = oppositeDir(ghosts[i].dir) || DIR_LEFT;
+          ghosts[i].speed = ghostSpeed(true);
+        }
+      }
+      updateHud();
+    }
+  }
+
+  function updateModeTimer() {
+    if (frightenedTimer > 0) {
+      frightenedTimer--;
+      if (frightenedTimer === 0) {
+        var i;
+        for (i = 0; i < ghosts.length; i++) {
+          ghosts[i].eaten = false;
+          ghosts[i].speed = ghostSpeed(false);
+        }
+      }
+      return;
+    }
+    modeTimer++;
+    var cycle = 420;
+  if (level > 1) {
+      cycle = 360;
+    }
+    if (modeTimer >= cycle) {
+      modeTimer = 0;
+      ghostMode = ghostMode === MODE_SCATTER ? MODE_CHASE : MODE_SCATTER;
+    }
+  }
+
+  function updateGhosts() {
+    var i;
+    for (i = 0; i < ghosts.length; i++) {
+      var g = ghosts[i];
+      if (g.eaten) {
+        g.speed = 3.5;
+        moveActor(g, false);
+        if (g.c === 10 && g.r === 7) {
+          g.eaten = false;
+          g.inPen = true;
+          g.releaseTimer = 60;
+          g.speed = ghostSpeed(false);
+        }
+        continue;
+      }
+      if (g.inPen) {
+        g.releaseTimer--;
+        if (g.releaseTimer <= 0) {
+          g.inPen = false;
+          g.dir = DIR_UP;
+        } else {
+          if (g.c !== 10) {
+            g.c = 10;
+            snapActor(g);
+          }
+          g.y += Math.sin(frame * 0.12 + g.idx) * 0.6;
+          continue;
+        }
+      }
+      if (g.dir === DIR_NONE || atTileCenter(g)) {
+        if (g.dir === DIR_NONE) {
+          g.dir = pickGhostDir(g);
+        }
+      }
+      moveActor(g, false);
+    }
+  }
+
+  function checkCollisions() {
+    var i;
+    for (i = 0; i < ghosts.length; i++) {
+      var g = ghosts[i];
+      if (g.inPen) {
+        continue;
+      }
+      var d = Math.abs(g.x - player.x) + Math.abs(g.y - player.y);
+      if (d > TILE * 0.55) {
+        continue;
+      }
+      if (frightenedTimer > 0 && !g.eaten) {
+        g.eaten = true;
+        ghostCombo++;
+        score += GHOST_BASE_POINTS * Math.pow(2, ghostCombo - 1);
+        g.dir = DIR_NONE;
+        updateHud();
+      } else if (!g.eaten) {
+        playerDied();
+        return;
+      }
+    }
+  }
+
+  function clearContinueTimer() {
+    if (continueTimerId) {
+      clearTimeout(continueTimerId);
+      continueTimerId = null;
+    }
+  }
+
+  function playerDied() {
+    lives--;
+    updateHud();
+    if (lives <= 0) {
+      gameOver();
+      return;
+    }
+    phase = PHASE_DIED;
+    running = false;
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = "MUNCHED!";
+    instructionsEl.textContent = "Lives left: " + lives;
+    btnStart.textContent = "CONTINUE";
+    btnStart.disabled = false;
+    endHintEl.textContent = "Press CONTINUE within 30 seconds.";
+    setOverlayButtons(true, false);
+    setStartScreenExtras(false);
+    setQuitVisible(true);
+    continueDeadline = Date.now() + CONTINUE_TIMEOUT_MS;
+    clearContinueTimer();
+    continueTimerId = setTimeout(function () {
+      if (phase === PHASE_DIED) {
+        gameOver();
+      }
+    }, CONTINUE_TIMEOUT_MS);
+  }
+
+  function continueAfterDeath() {
+    if (phase !== PHASE_DIED) {
+      return;
+    }
+    clearContinueTimer();
+    player = findStart(10, 13, DIR_LEFT);
+    var i;
+    for (i = 0; i < ghosts.length; i++) {
+      ghosts[i] = makeGhost(10, 7, DIR_LEFT, i, i > 0);
+    }
+    frightenedTimer = 0;
+    ghostMode = MODE_SCATTER;
+    modeTimer = 0;
+    beginReadyCountdown("GET READY!", "Ghosts are hungry again…");
+  }
+
+  function checkLevelComplete() {
+    if (dotsLeft <= 0) {
+      running = false;
+      showLevelComplete();
+    }
+  }
+
+  function updatePlaying() {
+    frame++;
+    animFrame++;
+    if (animFrame % 6 === 0) {
+      mouthFrame = 1 - mouthFrame;
+    }
+
+    if (keys.ArrowUp || keys.w || keys.W) {
+      player.nextDir = DIR_UP;
+    } else if (keys.ArrowDown || keys.s || keys.S) {
+      player.nextDir = DIR_DOWN;
+    } else if (keys.ArrowLeft || keys.a || keys.A) {
+      player.nextDir = DIR_LEFT;
+    } else if (keys.ArrowRight || keys.d || keys.D) {
+      player.nextDir = DIR_RIGHT;
+    }
+
+    if (player.dir === DIR_NONE && player.nextDir) {
+      if (canWalk(player.c + DX[player.nextDir], player.r + DY[player.nextDir])) {
+        player.dir = player.nextDir;
+      }
+    }
+
+    moveActor(player, true);
+    updateModeTimer();
+    updateGhosts();
+    checkCollisions();
+    checkLevelComplete();
+  }
+
+  function update() {
+    if (phase === PHASE_READY) {
+      readyTimer--;
+      if (readyTimer <= 0) {
+        phase = PHASE_PLAYING;
+        running = true;
+        overlay.classList.add("hidden");
+        setQuitVisible(true);
+      }
+      return;
+    }
+    if (phase === PHASE_PLAYING && running) {
+      updatePlaying();
+    }
+  }
+
+  function drawMaze() {
+    var r;
+    var c;
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        var x = OFF_X + c * TILE;
+        var y = OFF_Y + r * TILE;
+        var t = maze[r][c];
+        if (t === "#") {
+          ctx.fillStyle = "#2244cc";
+          ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2);
+          ctx.strokeStyle = "#6699ff";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4);
+        } else if (t === ".") {
+          ctx.fillStyle = "#ffb897";
+          ctx.beginPath();
+          ctx.arc(x + TILE * 0.5, y + TILE * 0.5, 3, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (t === "o") {
+          ctx.fillStyle = "#ffb897";
+          ctx.beginPath();
+          ctx.arc(x + TILE * 0.5, y + TILE * 0.5, 7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  function drawPlayer() {
+    var mouth = mouthFrame ? 0.25 : 0.55;
+    var rot = 0;
+    if (player.dir === DIR_LEFT) {
+      rot = Math.PI;
+    } else if (player.dir === DIR_UP) {
+      rot = -Math.PI * 0.5;
+    } else if (player.dir === DIR_DOWN) {
+      rot = Math.PI * 0.5;
+    }
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(rot);
+    ctx.fillStyle = "#ffe066";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, TILE * 0.38, mouth * Math.PI, (2 - mouth) * Math.PI);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawGhosts() {
+    var i;
+    for (i = 0; i < ghosts.length; i++) {
+      var g = ghosts[i];
+      if (g.inPen && g.releaseTimer > 0) {
+        /* still in pen */
+      }
+      var radius = TILE * 0.34;
+      if (frightenedTimer > 0 && !g.eaten) {
+        ctx.fillStyle = frightenedTimer < 90 && Math.floor(frame / 8) % 2 ? "#fff" : "#28f";
+      } else if (g.eaten) {
+        ctx.fillStyle = "#ccc";
+        radius = TILE * 0.28;
+      } else {
+        ctx.fillStyle = GHOST_COLORS[g.idx];
+      }
+      ctx.beginPath();
+      ctx.arc(g.x, g.y - 2, radius, Math.PI, 0);
+      ctx.lineTo(g.x + radius, g.y + radius);
+      var wobble;
+      for (wobble = 3; wobble >= 0; wobble--) {
+        var wx = g.x + radius - (wobble * radius * 0.5);
+        var wy = g.y + radius + (wobble % 2 ? 2 : -2);
+        ctx.lineTo(wx, wy);
+      }
+      ctx.closePath();
+      ctx.fill();
+      if (!g.eaten && !(frightenedTimer > 0)) {
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(g.x - 6, g.y - 6, 4, 5);
+        ctx.fillRect(g.x + 2, g.y - 6, 4, 5);
+        ctx.fillStyle = "#00f";
+        ctx.fillRect(g.x - 5, g.y - 4, 2, 3);
+        ctx.fillRect(g.x + 3, g.y - 4, 2, 3);
+      }
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, W, H);
+    drawMaze();
+    if (phase !== PHASE_MENU && phase !== PHASE_OVER) {
+      drawGhosts();
+      drawPlayer();
+    }
+    if (phase === PHASE_READY && readyTimer > 0) {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function updateHud() {
+    hud.textContent =
+      "SCORE " + score + "   LEVEL " + level + "   LIVES " + lives;
+  }
+
+  function showMenuOverlay() {
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = "MUNCHMAN";
+    instructionsEl.textContent =
+      "Arrow keys or WASD to move. Eat all dots — power pellets let you munch ghosts!";
+    endHintEl.textContent = "";
+    btnStart.disabled = false;
+    btnStart.textContent = "START";
+    setOverlayButtons(true, false);
+    setStartScreenExtras(true);
+    setQuitVisible(false);
+    if (lastLeaderboardData) {
+      updateStartScores(lastLeaderboardData);
+    }
+  }
+
+  function beginReadyCountdown(titleText, hintText) {
+    phase = PHASE_READY;
+    running = false;
+    readyTimer = READY_FRAMES;
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = titleText || "GET READY!";
+    instructionsEl.textContent = hintText || "Ghosts leaving the pen…";
+    endHintEl.textContent = "";
+    setOverlayButtons(false, false);
+    setStartScreenExtras(false);
+    setQuitVisible(true);
+  }
+
+  function showLevelComplete() {
+    phase = PHASE_LEVEL;
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = "LEVEL " + level + " CLEARED!";
+    instructionsEl.textContent = "Score: " + score + " — ghosts speed up next maze.";
+    endHintEl.textContent = "";
+    btnNext.textContent = "NEXT LEVEL";
+    setOverlayButtons(false, true);
+    setStartScreenExtras(false);
+    setQuitVisible(true);
+  }
+
+  function formatTopScore(scoreVal, enabled) {
+    if (!enabled || !scoreVal) {
+      return "Your top score: —";
+    }
+    return "Your top score: " + scoreVal;
+  }
+
+  function formatHighScore(entries, enabled) {
+    if (!enabled || !entries || !entries.length) {
+      return "High score: —";
+    }
+    return "High score: " + entries[0].score;
+  }
+
+  function updateStartScores(data) {
+    var enabled = !!data.scoresEnabled;
+    personalEl.textContent = formatTopScore(data.personalScore || 0, enabled);
+    highScoreEl.textContent = formatHighScore(data.entries || [], enabled);
+    if (!enabled || data.unavailableMessage) {
+      unavailableEl.textContent =
+        data.unavailableMessage || SLArcade.SCORES_UNAVAILABLE_MSG;
+      unavailableEl.classList.remove("hidden");
+      startScoresEl.classList.add("hidden");
+      btnLeaderboard.classList.add("hidden");
+      return;
+    }
+    unavailableEl.classList.add("hidden");
+    startScoresEl.classList.remove("hidden");
+    if (phase === PHASE_MENU) {
+      btnLeaderboard.classList.remove("hidden");
+    }
+  }
+
+  function renderLeaderboardList(entries) {
+    leaderboardEl.innerHTML = "";
+    var i;
+    for (i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var li = document.createElement("li");
+      var rankSpan = document.createElement("span");
+      var nameSpan = document.createElement("span");
+      var scoreSpan = document.createElement("span");
+      rankSpan.className = "rank";
+      nameSpan.className = "name";
+      scoreSpan.className = "score";
+      rankSpan.textContent = String(e.rank) + ".";
+      nameSpan.textContent = e.name;
+      scoreSpan.textContent = String(e.score);
+      li.appendChild(rankSpan);
+      li.appendChild(nameSpan);
+      li.appendChild(scoreSpan);
+      leaderboardEl.appendChild(li);
+    }
+    if (!entries.length) {
+      var empty = document.createElement("li");
+      empty.textContent = "No scores yet — be the first!";
+      leaderboardEl.appendChild(empty);
+    }
+  }
+
+  function renderLeaderboard(data) {
+    lastLeaderboardData = data;
+    updateStartScores(data);
+    renderLeaderboardList(data.entries || []);
+  }
+
+  function refreshLeaderboard() {
+    return SLArcade.getLeaderboard()
+      .then(renderLeaderboard)
+      .catch(function () {
+        unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
+        unavailableEl.classList.remove("hidden");
+        startScoresEl.classList.add("hidden");
+      });
+  }
+
+  function openLeaderboardModal() {
+    if (lastLeaderboardData) {
+      renderLeaderboardList(lastLeaderboardData.entries || []);
+    }
+    leaderboardModal.classList.remove("hidden");
+  }
+
+  function closeLeaderboardModal() {
+    leaderboardModal.classList.add("hidden");
+  }
+
+  function showMessages(list) {
+    messagesEl.innerHTML = "";
+    if (!list || !list.length) {
+      return;
+    }
+    var i;
+    for (i = 0; i < list.length; i++) {
+      var div = document.createElement("div");
+      div.className = "msg";
+      div.textContent = list[i];
+      messagesEl.appendChild(div);
+    }
+  }
+
+  function enablePlayAgain(hint) {
+    btnStart.textContent = "PLAY AGAIN";
+    btnStart.disabled = false;
+    endHintEl.textContent = hint || "Tap PLAY AGAIN for another run.";
+  }
+
+  function gameOver() {
+    clearContinueTimer();
+    phase = PHASE_OVER;
+    running = false;
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = "GAME OVER";
+    instructionsEl.textContent = "Final score: " + score + " — Level " + level;
+    btnStart.textContent = "SAVING…";
+    btnStart.disabled = true;
+    setOverlayButtons(true, false);
+    setStartScreenExtras(false);
+    setQuitVisible(false);
+
+    var hudMode = SLArcade.isHudMode();
+    var canEnd = SLArcade.canEndSession() && !hudMode;
+    var recoveryTimer = setTimeout(function () {
+      if (phase === PHASE_OVER && btnStart.disabled) {
+        enablePlayAgain("Tap PLAY AGAIN to continue.");
+      }
+    }, 8000);
+
+    function finishGameOver() {
+      clearTimeout(recoveryTimer);
+      if (canEnd) {
+        btnStart.textContent = "SESSION ENDING…";
+        btnStart.disabled = true;
+        endHintEl.textContent =
+          "Click the arcade cabinet in-world to play again.";
+        setTimeout(function () {
+          SLArcade.endSession().catch(function () {
+            enablePlayAgain("Session could not end — tap PLAY AGAIN.");
+          });
+        }, 2000);
+        return;
+      }
+      enablePlayAgain("Tap PLAY AGAIN for another run.");
+    }
+
+    SLArcade.submitScore(score)
+      .then(function (result) {
+        if (result && result.pendingMoapReport) {
+          return;
+        }
+        showMessages(result.messages || []);
+        if (result.unavailableMessage) {
+          unavailableEl.textContent = result.unavailableMessage;
+          unavailableEl.classList.remove("hidden");
+        }
+        return refreshLeaderboard();
+      })
+      .then(finishGameOver)
+      .catch(function () {
+        clearTimeout(recoveryTimer);
+        unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
+        unavailableEl.classList.remove("hidden");
+        enablePlayAgain("Score save timed out — you can still play again.");
+      });
+  }
+
+  function startGame() {
+    if (btnStart.disabled) {
+      return;
+    }
+    if (phase === PHASE_DIED) {
+      continueAfterDeath();
+      return;
+    }
+    clearContinueTimer();
+    score = 0;
+    lives = STARTING_LIVES;
+    level = 1;
+    frame = 0;
+    animFrame = 0;
+    showMessages([]);
+    unavailableEl.classList.add("hidden");
+    endHintEl.textContent = "";
+    initLevel();
+    updateHud();
+    beginReadyCountdown("GET READY!", "Chomp all the dots — avoid the ghosts!");
+  }
+
+  function nextLevel() {
+    level++;
+    initLevel();
+    updateHud();
+    beginReadyCountdown(
+      "LEVEL " + level,
+      "Ghosts are faster — grab power pellets when you can!"
+    );
+  }
+
+  function quitGame() {
+    if (phase === PHASE_MENU || phase === PHASE_OVER) {
+      return;
+    }
+    clearContinueTimer();
+    phase = PHASE_MENU;
+    running = false;
+    showMessages([]);
+    showMenuOverlay();
+    SLArcade.endSession().catch(function () {});
+  }
+
+  function syncPlayerLine() {
+    var s = SLArcade.getSession();
+    if (s.name) {
+      playerLine.textContent = "Player: " + s.name;
+    }
+  }
+
+  window.addEventListener("keydown", function (e) {
+    keys[e.key] = true;
+    if (e.key === "Escape" && phase !== PHASE_MENU && phase !== PHASE_OVER) {
+      quitGame();
+    }
+    if (
+      (e.key === "Enter" || e.key === " ") &&
+      phase === PHASE_DIED &&
+      !btnStart.disabled
+    ) {
+      e.preventDefault();
+      continueAfterDeath();
+    }
+  });
+  window.addEventListener("keyup", function (e) {
+    keys[e.key] = false;
+  });
+
+  btnStart.addEventListener("click", startGame);
+  btnStart.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    startGame();
+  });
+  btnNext.addEventListener("click", nextLevel);
+  btnNext.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    nextLevel();
+  });
+  btnQuit.addEventListener("click", quitGame);
+  btnQuit.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    quitGame();
+  });
+  btnLeaderboard.addEventListener("click", openLeaderboardModal);
+  btnLeaderboard.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    openLeaderboardModal();
+  });
+  btnModalClose.addEventListener("click", closeLeaderboardModal);
+  btnModalClose.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    closeLeaderboardModal();
+  });
+  leaderboardModal.addEventListener("click", function (e) {
+    if (e.target === leaderboardModal) {
+      closeLeaderboardModal();
+    }
+  });
+
+  window.addEventListener("message", function () {
+    syncPlayerLine();
+    refreshLeaderboard();
+  });
+
+  syncPlayerLine();
+  refreshLeaderboard();
+  if (SLArcade.isPendingMoapSave()) {
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = "SAVING SCORE";
+    instructionsEl.textContent = "Writing your score to the leaderboard…";
+    btnStart.textContent = "PLEASE WAIT…";
+    btnStart.disabled = true;
+    setOverlayButtons(true, false);
+    setStartScreenExtras(false);
+  } else {
+    showMenuOverlay();
+  }
+  requestAnimationFrame(loop);
+})();
