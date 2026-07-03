@@ -495,17 +495,21 @@
       clearInterval(continueTimerId);
       continueTimerId = null;
     }
+  }
+
+  function resetDeathContinue() {
+    clearContinueTimer();
     continueDeadline = 0;
   }
 
   function tickDeathTimer() {
     if (phase !== PHASE_DIED) {
-      clearContinueTimer();
+      resetDeathContinue();
       return;
     }
     var leftMs = continueDeadline - Date.now();
     if (leftMs <= 0) {
-      clearContinueTimer();
+      resetDeathContinue();
       endHintEl.textContent = "Time's up!";
       gameOver();
       return;
@@ -536,8 +540,8 @@
     setOverlayButtons(true, false);
     setStartScreenExtras(false);
     setQuitVisible(true);
-    continueDeadline = Date.now() + CONTINUE_TIMEOUT_MS;
     clearContinueTimer();
+    continueDeadline = Date.now() + CONTINUE_TIMEOUT_MS;
     tickDeathTimer();
     continueTimerId = setInterval(tickDeathTimer, 250);
   }
@@ -546,7 +550,7 @@
     if (phase !== PHASE_DIED) {
       return;
     }
-    clearContinueTimer();
+    resetDeathContinue();
     playerInvuln = RESPAWN_FRAMES;
     beginReadyCountdown(
       "GET READY!",
@@ -803,7 +807,7 @@
   }
 
   function gameOver() {
-    clearContinueTimer();
+    resetDeathContinue();
     phase = PHASE_OVER;
     running = false;
     overlay.classList.remove("hidden");
@@ -882,7 +886,7 @@
       continueAfterDeath();
       return;
     }
-    clearContinueTimer();
+    resetDeathContinue();
     score = 0;
     lives = STARTING_LIVES;
     level = 1;
@@ -912,7 +916,7 @@
     if (phase === PHASE_MENU || phase === PHASE_OVER) {
       return;
     }
-    clearContinueTimer();
+    resetDeathContinue();
     phase = PHASE_MENU;
     running = false;
     bullets = [];
