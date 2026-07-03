@@ -39,6 +39,7 @@
   var READY_FRAMES = 90;
   var AMMO_PER_BATTERY = 10;
   var CITY_BONUS = 100;
+  var CITY_BONUS_SCORES = [2000, 5000, 10000];
   var KILL_POINTS = 25;
   var SAUCER_POINTS = 125;
   var BOMBER_POINTS = 50;
@@ -66,6 +67,9 @@
   var spawnInterval = 55;
   var flyerSpawnTimer = 0;
   var flyerSpawnInterval = 320;
+  var cityBonusesClaimed = 0;
+  var bonusFlashTimer = 0;
+  var bonusFlashText = "";
 
   var FLYER_SAUCER = "saucer";
   var FLYER_BOMBER = "bomber";
@@ -142,6 +146,42 @@
     for (i = 0; i < batteries.length; i++) {
       batteries[i].ammo = batteries[i].maxAmmo;
     }
+  }
+
+  function reviveOneCity() {
+    var i;
+    for (i = 0; i < cities.length; i++) {
+      if (!cities[i].alive) {
+        cities[i].alive = true;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function checkCityBonuses() {
+    var i;
+    for (i = cityBonusesClaimed; i < CITY_BONUS_SCORES.length; i++) {
+      if (score < CITY_BONUS_SCORES[i]) {
+        return;
+      }
+      cityBonusesClaimed = i + 1;
+      if (reviveOneCity()) {
+        bonusFlashText = "BONUS CITY — " + CITY_BONUS_SCORES[i] + " pts!";
+        bonusFlashTimer = 150;
+        updateHud();
+      }
+    }
+  }
+
+  function checkAllCitiesLost() {
+    if (phase !== PHASE_PLAYING || !running) {
+      return;
+    }
+    if (aliveCities() > 0) {
+      return;
+    }
+    gameOver("cities");
   }
 
   function pickTarget() {
@@ -239,6 +279,7 @@
     flyers.splice(i, 1);
     addExplosion(x, y, f.type === FLYER_SAUCER ? 34 : EXP_MAX_R);
     updateHud();
+    checkCityBonuses();
   }
 
   function nearestBattery(px) {
@@ -332,6 +373,7 @@
     enemyMissiles.splice(i, 1);
     addExplosion(x, y, EXP_MAX_R);
     updateHud();
+    checkCityBonuses();
   }
 
   function damageCities() {
@@ -352,6 +394,7 @@
         }
       }
     }
+    checkAllCitiesLost();
   }
 
   function updateExplosions() {
@@ -467,11 +510,12 @@
       return;
     }
     if (aliveCities() === 0) {
-      gameOver();
+      gameOver("cities");
       return;
     }
     var bonus = aliveCities() * CITY_BONUS;
     score += bonus;
+    checkCityBonuses();
     running = false;
     setPlayingPointer(false);
     showWaveComplete(bonus);
@@ -494,12 +538,20 @@
       return;
     }
     if (aliveCities() > 0) {
-      gameOver();
+      gameOver("ammo");
     }
   }
 
   function updatePlaying() {
     frame++;
+
+    if (bonusFlashTimer > 0) {
+      bonusFlashTimer--;
+      if (bonusFlashTimer === 0) {
+        bonusFlashText = "";
+        updateHud();
+      }
+    }
 
     if (waveSpawnsLeft > 0) {
       spawnTimer++;
@@ -698,7 +750,7 @@
   }
 
   function updateHud() {
-    hud.textContent =
+    var line =
       "SCORE " +
       score +
       "   WAVE " +
@@ -707,13 +759,17 @@
       aliveCities() +
       "/6   AMMO " +
       totalAmmo();
+    if (bonusFlashTimer > 0) {
+      line += "   |   " + bonusFlashText;
+    }
+    hud.textContent = line;
   }
 
   function showMenuOverlay() {
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL MISSILE DEFENSE";
     instructionsEl.textContent =
-      "Click or tap to fire interceptors. Bombers from wave 2; bonus saucers from wave 4.";
+      "Click or tap to fire interceptors. Bonus cities at 2,000 / 5,000 / 10,000 pts.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -862,13 +918,23 @@
     endHintEl.textContent = hint || "Tap PLAY AGAIN for another run.";
   }
 
-  function gameOver() {
+  function gameOver(reason) {
     phase = PHASE_OVER;
     running = false;
     setPlayingPointer(false);
     overlay.classList.remove("hidden");
-    overlayTitle.textContent = "GAME OVER";
-    instructionsEl.textContent = "Final score: " + score + " — Wave " + wave;
+    if (reason === "cities") {
+      overlayTitle.textContent = "YOU LOST";
+      instructionsEl.textContent =
+        "All cities destroyed. Final score: " + score + " — Wave " + wave;
+    } else if (reason === "ammo") {
+      overlayTitle.textContent = "GAME OVER";
+      instructionsEl.textContent =
+        "Out of ammunition. Final score: " + score + " — Wave " + wave;
+    } else {
+      overlayTitle.textContent = "GAME OVER";
+      instructionsEl.textContent = "Final score: " + score + " — Wave " + wave;
+    }
     btnStart.textContent = "SAVING…";
     btnStart.disabled = true;
     setOverlayButtons(true, false);
@@ -935,7 +1001,10 @@
     var hint =
       waveSpawnsLeft + " inbound tracks detected. Click to fire interceptors.";
     if (wave >= 2) {
-      hint += " Watch for saucers and bomb-dropping craft.";
+      hint += " Bombers inbound.";
+    }
+    if (wave >= 4) {
+      hint += " Saucers spotted — shoot for bonus points.";
     }
     beginReadyCountdown("WAVE " + wave, hint);
   }
@@ -947,6 +1016,9 @@
     score = 0;
     wave = 1;
     frame = 0;
+    cityBonusesClaimed = 0;
+    bonusFlashTimer = 0;
+    bonusFlashText = "";
     showMessages([]);
     unavailableEl.classList.add("hidden");
     endHintEl.textContent = "";
