@@ -30,11 +30,17 @@
 
   var COLS = 21;
   var ROWS = 15;
+  var HUD_PAD_TOP = 28;
+  var HUD_PAD_BOTTOM = 20;
   var TILE = 32;
+  var maxMazeH = H - HUD_PAD_TOP - HUD_PAD_BOTTOM;
+  if (ROWS * TILE > maxMazeH) {
+    TILE = Math.floor(maxMazeH / ROWS);
+  }
   var MAZE_W = COLS * TILE;
   var MAZE_H = ROWS * TILE;
   var OFF_X = Math.floor((W - MAZE_W) / 2);
-  var OFF_Y = Math.floor((H - MAZE_H) / 2) + 8;
+  var OFF_Y = HUD_PAD_TOP;
 
   var DIR_NONE = 0;
   var DIR_UP = 1;
