@@ -41,6 +41,7 @@
   var CITY_BONUS = 100;
   var KILL_POINTS = 25;
   var SPLIT_CHANCE = 0.35;
+  var SPLIT_CHANCE_WAVE1 = 0.12;
   var EXP_MAX_R = 42;
   var EXP_GROW = 1.8;
 
@@ -159,7 +160,7 @@
     var dx = tx - sx;
     var dy = ty - sy;
     var len = Math.sqrt(dx * dx + dy * dy);
-    var speed = 1.6 + wave * 0.12 + Math.random() * 0.4;
+    var speed = 0.9 + (wave - 1) * 0.14 + Math.random() * 0.2;
     enemyMissiles.push({
       x: sx,
       y: sy,
@@ -255,7 +256,7 @@
   function destroyEnemyAt(i, x, y) {
     var m = enemyMissiles[i];
     score += KILL_POINTS;
-    if (m.split && Math.random() < SPLIT_CHANCE) {
+    if (m.split && Math.random() < (wave === 1 ? SPLIT_CHANCE_WAVE1 : SPLIT_CHANCE)) {
       splitMissile(m);
     }
     enemyMissiles.splice(i, 1);
@@ -353,7 +354,7 @@
   }
 
   function waveEnemyCount() {
-    return 5 + (wave - 1) * 3;
+    return 4 + (wave - 1) * 3;
   }
 
   function checkWaveComplete() {
@@ -404,7 +405,7 @@
         spawnTimer = 0;
         spawnEnemy();
         waveSpawnsLeft--;
-        spawnInterval = Math.max(18, spawnInterval - 1);
+        spawnInterval = Math.max(28, spawnInterval - 1);
       }
     }
 
@@ -785,7 +786,7 @@
     enemyMissiles = [];
     waveSpawnsLeft = waveEnemyCount();
     spawnTimer = 0;
-    spawnInterval = Math.max(22, 58 - wave * 3);
+    spawnInterval = Math.max(32, 76 - wave * 5);
     updateHud();
     beginReadyCountdown(
       "WAVE " + wave,
