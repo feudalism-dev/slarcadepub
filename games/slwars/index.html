@@ -17,7 +17,7 @@
         background: #000;
       }
     </style>
-    <link rel="stylesheet" href="style.css?v=11" />
+    <link rel="stylesheet" href="style.css?v=1" />
   </head>
   <body>
     <div id="app">
@@ -26,16 +26,32 @@
         <div id="overlay">
           <div>
             <h1 id="overlay-title">SL WARS</h1>
-            <p id="instructions">START opens the dogfight — starfield rush, weaving TIEs, mouse lean. Keys: 1 dogfight, 2 surface, 3 trench, Esc menu.</p>
+            <p id="instructions">Clean slate. Game design pending.</p>
+            <p id="player-line">Player: …</p>
+            <div id="start-scores" class="start-scores">
+              <p id="personal-score">Your top score: —</p>
+              <p id="high-score">High score: —</p>
+            </div>
+            <div id="scores-unavailable" class="hidden"></div>
+            <div id="game-messages"></div>
+            <p id="end-hint"></p>
             <div class="overlay-actions">
-              <button id="btn-start" type="button">START DOGFIGHT</button>
+              <button id="btn-start" type="button">START</button>
+              <button id="btn-leaderboard" type="button" class="hidden">LEADERBOARD</button>
             </div>
           </div>
         </div>
-        <div id="state-label"></div>
+        <button id="btn-quit" type="button" class="hidden" title="Quit game (Esc)">QUIT</button>
+      </div>
+    </div>
+    <div id="leaderboard-modal" class="modal hidden" role="dialog" aria-labelledby="leaderboard-title" aria-modal="true">
+      <div class="modal-panel">
+        <h2 id="leaderboard-title">LEADERBOARD</h2>
+        <ol id="leaderboard"></ol>
+        <button id="btn-modal-close" type="button">CLOSE</button>
       </div>
     </div>
     <script src="../../shared/sl-api.js?v=18"></script>
-    <script src="game.js?v=12"></script>
+    <script src="game.js?v=1"></script>
   </body>
 </html>
