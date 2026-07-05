@@ -43,8 +43,8 @@
   var KILL_POINTS = 25;
   var SAUCER_POINTS = 125;
   var BOMBER_POINTS = 50;
-  var SPLIT_CHANCE = 0.35;
-  var SPLIT_CHANCE_WAVE1 = 0.12;
+  var SPLIT_CHANCE = 0.28;
+  var SPLIT_CHANCE_WAVE1 = 0.1;
   var EXP_MAX_R = 42;
   var EXP_GROW = 1.8;
 
@@ -209,7 +209,7 @@
     var dx = tx - sx;
     var dy = ty - sy;
     var len = Math.sqrt(dx * dx + dy * dy);
-    var speed = 0.9 + (wave - 1) * 0.14 + Math.random() * 0.2;
+    var speed = 0.82 + (wave - 1) * 0.08 + Math.random() * 0.15;
     enemyMissiles.push({
       x: sx,
       y: sy,
@@ -221,20 +221,20 @@
   }
 
   function maxFlyersForWave() {
-    if (wave < 2) {
+    if (wave < 3) {
       return 0;
     }
-    if (wave < 4) {
+    if (wave < 6) {
       return 1;
     }
     return 2;
   }
 
   function flyerSpawnsForWave() {
-    if (wave < 2) {
+    if (wave < 3) {
       return 0;
     }
-    if (wave < 4) {
+    if (wave < 6) {
       return 1;
     }
     return 2;
@@ -245,9 +245,9 @@
       return false;
     }
     var fromLeft = Math.random() < 0.5;
-    var isSaucer = wave >= 4 && Math.random() < 0.42;
+    var isSaucer = wave >= 6 && Math.random() < 0.38;
     var y = 44 + Math.random() * 48;
-    var speed = isSaucer ? 2.4 + wave * 0.08 : 1.1 + wave * 0.06;
+    var speed = isSaucer ? 2.1 + wave * 0.05 : 1.0 + wave * 0.04;
     if (!fromLeft) {
       speed = -speed;
     }
@@ -259,8 +259,8 @@
       w: isSaucer ? 22 : 26,
       h: isSaucer ? 10 : 12,
       dropTimer: 60 + Math.floor(Math.random() * 50),
-      dropInterval: Math.max(70, 130 - wave * 6),
-      dropsLeft: isSaucer ? 0 : Math.min(3, 1 + Math.floor(wave / 3)),
+      dropInterval: Math.max(90, 150 - wave * 4),
+      dropsLeft: isSaucer ? 0 : Math.min(3, 1 + Math.floor(wave / 4)),
     };
     flyers.push(flyer);
     return true;
@@ -276,7 +276,7 @@
     if (len < 1) {
       len = 1;
     }
-    var speed = 0.75 + (wave - 1) * 0.1 + Math.random() * 0.15;
+    var speed = 0.7 + (wave - 1) * 0.06 + Math.random() * 0.12;
     enemyMissiles.push({
       x: f.x,
       y: f.y + f.h * 0.5,
@@ -508,7 +508,7 @@
   }
 
   function waveEnemyCount() {
-    return 4 + (wave - 1) * 3;
+    return 4 + (wave - 1) * 2;
   }
 
   function checkWaveComplete() {
