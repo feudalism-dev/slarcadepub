@@ -1,11 +1,11 @@
 /**
  * SL Wars — Phase 1 dogfight (single-file bundle for CEF / MOAP cache-busting).
- * BUILD 23: 3D rotating TIE wireframes, true Z perspective.
+ * BUILD 24: projectVertex rotation matrix BEFORE perspective (tumbling 3D TIEs).
  */
 (function () {
   "use strict";
 
-  var BUILD_ID = "23-3D-TIE";
+  var BUILD_ID = "24-PROJECT-VERTEX";
 
   if (typeof SLArcade !== "undefined" && SLArcade.registerGameId) {
     SLArcade.registerGameId("slwars");
@@ -14,7 +14,8 @@
   var PERSPECTIVE_FACTOR = 500;
   var Z_HORIZON = 1000;
   var Z_PLAYER = 0;
-  var TIE_MODEL_SCALE = 18;
+  /** Local model units → world units (large enough that rotation reads in depth). */
+  var TIE_MODEL_SCALE = 42;
   var TIE_POOL_SIZE = 8;
   var ACTIVE_TIES = 3;
   var SPAWN_COOLDOWN = 1.4;
@@ -261,32 +262,48 @@
 
   var TIE_FIGHTER_WIREFRAME = buildTieWireframe();
 
-  function rotateX(x, y, z, c, s) {
-    return [x, y * c - z * s, y * s + z * c];
-  }
-  function rotateY(x, y, z, c, s) {
-    return [x * c + z * s, y, -x * s + z * c];
-  }
-  function rotateZ(x, y, z, c, s) {
-    return [x * c - y * s, x * s + y * c, z];
-  }
+  /**
+   * Transforms a local 3D vertex into a 2D screen coordinate.
+   * 1. Scale model-space point
+   * 2. Rotate by fighter.rx / ry / rz (tumbling)
+   * 3. Translate to fighter world position (x, y, z)
+   * 4. Perspective: scale = PF / (PF + worldZ)
+   *
+   * @param {number[]|{x:number,y:number,z:number}} v local vertex
+   * @param {object} fighter
+   * @returns {{x:number,y:number,scale:number}|null}
+   */
+  function projectVertex(v, fighter) {
+    var lx = (v.x !== undefined ? v.x : v[0]) * TIE_MODEL_SCALE;
+    var ly = (v.y !== undefined ? v.y : v[1]) * TIE_MODEL_SCALE;
+    var lz = (v.z !== undefined ? v.z : v[2]) * TIE_MODEL_SCALE;
 
-  function transformVertex(vx, vy, vz, t) {
-    var cx = Math.cos(t.rx);
-    var sx = Math.sin(t.rx);
-    var cy = Math.cos(t.ry);
-    var sy = Math.sin(t.ry);
-    var cz = Math.cos(t.rz);
-    var sz = Math.sin(t.rz);
-    var p = rotateY(vx, vy, vz, cy, sy);
-    p = rotateX(p[0], p[1], p[2], cx, sx);
-    p = rotateZ(p[0], p[1], p[2], cz, sz);
-    var s = TIE_MODEL_SCALE;
-    return {
-      x: t.x + p[0] * s,
-      y: t.y + p[1] * s,
-      z: t.z + p[2] * s,
-    };
+    // 1. Rotation matrices (Y → X → Z) — not a static screen-locked mesh
+    var cy = Math.cos(fighter.ry);
+    var sy = Math.sin(fighter.ry);
+    var rx = lx * cy - lz * sy;
+    var rz = lx * sy + lz * cy;
+    var ry = ly;
+
+    var cx = Math.cos(fighter.rx);
+    var sx = Math.sin(fighter.rx);
+    var rry = ry * cx - rz * sx;
+    var rrz = ry * sx + rz * cx;
+    var rrx = rx;
+
+    var cz = Math.cos(fighter.rz);
+    var sz = Math.sin(fighter.rz);
+    var fx = rrx * cz - rry * sz;
+    var fy = rrx * sz + rry * cz;
+    var fz = rrz;
+
+    // 2. Translate into world space (fighter position is the model origin)
+    var worldX = fx + fighter.x;
+    var worldY = fy + fighter.y;
+    var worldZ = fz + fighter.z;
+
+    // 3. Perspective projection (per-vertex Z, so near wing edges grow first)
+    return project(worldX, worldY, worldZ);
   }
 
   function createTie() {
@@ -303,9 +320,9 @@
       rx: 0,
       ry: 0,
       rz: 0,
-      drx: 0,
-      dry: 0,
-      drz: 0,
+      rotationSpeedX: 0,
+      rotationSpeedY: 0,
+      rotationSpeedZ: 0,
     };
   }
 
@@ -316,13 +333,15 @@
     t.baseY = (Math.random() - 0.5) * 140;
     t.ampX = 40 + Math.random() * 60;
     t.ampY = 25 + Math.random() * 45;
-    t.speed = 160 + Math.random() * 80;
+    t.speed = 140 + Math.random() * 70;
+    // Start at a random orientation so wings aren't always face-on
     t.rx = Math.random() * Math.PI * 2;
     t.ry = Math.random() * Math.PI * 2;
-    t.rz = Math.random() * Math.PI * 2;
-    t.drx = (Math.random() - 0.5) * 1.8;
-    t.dry = 0.6 + Math.random() * 1.4;
-    t.drz = (Math.random() - 0.5) * 1.2;
+    t.rz = (Math.random() - 0.5) * 0.8;
+    // Fast tumble — readable as 3D, not a locked billboard
+    t.rotationSpeedX = (Math.random() - 0.5) * 3.5;
+    t.rotationSpeedY = 1.8 + Math.random() * 2.8;
+    t.rotationSpeedZ = (Math.random() - 0.5) * 2.2;
     t.x = t.baseX + Math.sin(t.z / 50) * t.ampX;
     t.y = t.baseY + Math.cos(t.z / 40) * t.ampY;
     return t;
@@ -332,26 +351,28 @@
     t.z -= t.speed * dt;
     t.x = t.baseX + Math.sin(t.z / 50) * t.ampX;
     t.y = t.baseY + Math.cos(t.z / 40) * t.ampY;
-    t.rx += t.drx * dt;
-    t.ry += t.dry * dt;
-    t.rz += t.drz * dt;
+    t.rx += t.rotationSpeedX * dt;
+    t.ry += t.rotationSpeedY * dt;
+    t.rz += t.rotationSpeedZ * dt;
     return t.z <= Z_PLAYER;
   }
 
+  /**
+   * Draw TIE as 3D segments: each endpoint goes through projectVertex
+   * (rotate → translate → perspective). Never a static 2D vertex map.
+   */
   function drawTie(t) {
     var segs = TIE_FIGHTER_WIREFRAME;
     var centerScale = PERSPECTIVE_FACTOR / (PERSPECTIVE_FACTOR + t.z);
-    var lw = centerScale > 0.45 ? 1.8 : 1.2;
+    var lw = centerScale > 0.4 ? 2 : 1.3;
     var i;
     ctx.beginPath();
     ctx.strokeStyle = "#66ff66";
     ctx.lineWidth = lw;
     for (i = 0; i < segs.length; i++) {
       var s = segs[i];
-      var w1 = transformVertex(s.p1[0], s.p1[1], s.p1[2], t);
-      var w2 = transformVertex(s.p2[0], s.p2[1], s.p2[2], t);
-      var a = project(w1.x, w1.y, w1.z);
-      var b = project(w2.x, w2.y, w2.z);
+      var a = projectVertex(s.p1, t);
+      var b = projectVertex(s.p2, t);
       if (!a || !b) {
         continue;
       }
