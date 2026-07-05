@@ -46,7 +46,7 @@
   var PHASE_OVER = "gameOver";
 
   var STAGE_BATTLE = "battle";
-  var STAGE_APPROACH = "approach";
+  var STAGE_SURFACE = "surface";
   var STAGE_TRENCH = "trench";
   var STAGE_EXPLODE = "explode";
 
@@ -61,6 +61,10 @@
   var WIRE_DIM = "#264";
   var WIRE_RED = "#f55";
   var WIRE_YELLOW = "#fd6";
+  var WIRE_MAGENTA = "#f6f";
+  var WIRE_PINK = "#f8a";
+  var WIRE_WHITE = "#fff";
+  var WIRE_BLUE = "#68f";
 
   var keys = {};
   var phase = PHASE_MENU;
@@ -108,12 +112,19 @@
   var towerSpawnAcc = 0;
 
   var approachTimer = 0;
-  var deathStarZ = 1800;
-  var surfaceTargets = [];
   var surfaceKilled = 0;
-  var surfaceRequired = 6;
 
-  var trenchProgress = 0;
+  var TIE_EDGES = [
+    [[0, 0, 12], [0, 0, -12]],
+    [[-8, -8, 0], [8, 8, 0], [-8, 8, 0], [8, -8, 0], [-8, -8, 0]],
+    [[-36, 0, 0], [36, 0, 0]],
+    [[-36, 0, 0], [-36, 22, 0], [-12, 22, 0], [0, 12, 0]],
+    [[0, 12, 0], [12, 22, 0], [36, 22, 0], [36, 0, 0]],
+    [[-36, 0, 0], [-36, -22, 0], [-12, -22, 0], [0, -12, 0]],
+    [[0, -12, 0], [12, -22, 0], [36, -22, 0], [36, 0, 0]],
+    [[-16, 16, 0], [16, 16, 0], [16, -16, 0], [-16, -16, 0], [-16, 16, 0]],
+    [[-20, 0, 6], [20, 0, 6], [20, 0, -6], [-20, 0, -6], [-20, 0, 6]],
+  ];
   var trenchSpeed = 2.8;
   var towers = [];
   var exhaustVisible = false;
@@ -125,16 +136,19 @@
   var laserFlash = 0;
   var hitFlash = 0;
   var killFlash = [];
+  var starbursts = [];
+  var shipBank = 0;
+  var hudHint = "";
 
-  var TIE_EDGES = [
-    [[0, 0, 10], [0, 0, -10]],
-    [[-32, 0, 0], [32, 0, 0]],
-    [[-32, 0, 0], [-32, 20, 0], [-10, 20, 0], [0, 10, 0]],
-    [[0, 10, 0], [10, 20, 0], [32, 20, 0], [32, 0, 0]],
-    [[-32, 0, 0], [-32, -20, 0], [-10, -20, 0], [0, -10, 0]],
-    [[0, -10, 0], [10, -20, 0], [32, -20, 0], [32, 0, 0]],
-    [[-14, 14, 0], [14, 14, 0], [14, -14, 0], [-14, -14, 0], [-14, 14, 0]],
-  ];
+  var surfaceTowers = [];
+  var towersRemaining = 0;
+  var surfaceScroll = 0;
+  var surfaceTowerAcc = 0;
+  var deathStarZ = 2200;
+
+  var barricades = [];
+  var barricadeAcc = 0;
+  var trenchProgress = 0;
 
   function setGameActive(active) {
     gameWrap.classList.toggle("game-active", !!active);
@@ -518,16 +532,215 @@
     ties.push(t);
   }
 
-  function spawnSurfaceTarget() {
-    var ang = Math.random() * Math.PI * 2;
-    var lat = (Math.random() - 0.3) * Math.PI * 0.55;
-    var r = 130;
-    surfaceTargets.push({
-      lx: Math.cos(lat) * Math.cos(ang) * r,
-      ly: Math.sin(lat) * r,
-      lz: Math.cos(lat) * Math.sin(ang) * r,
+  function spawnStarburst(x, y, size) {
+    var colors = [WIRE_WHITE, WIRE_YELLOW, WIRE_CYAN, WIRE_MAGENTA, WIRE_PINK, WIRE_RED];
+    var rays = 14 + Math.floor(Math.random() * 6);
+    var i;
+    var pts = [];
+    for (i = 0; i < rays; i++) {
+      var a = (i / rays) * Math.PI * 2 + Math.random() * 0.2;
+      var len = size * (0.6 + Math.random() * 0.7);
+      pts.push({
+        ax: x,
+        ay: y,
+        bx: x + Math.cos(a) * len,
+        by: y + Math.sin(a) * len,
+        color: colors[i % colors.length],
+      });
+    }
+    starbursts.push({ pts: pts, life: 0.55, maxLife: 0.55 });
+  }
+
+  function updateStarbursts() {
+    var i;
+    for (i = starbursts.length - 1; i >= 0; i--) {
+      starbursts[i].life -= dt;
+      if (starbursts[i].life <= 0) {
+        starbursts.splice(i, 1);
+      }
+    }
+  }
+
+  function drawStarbursts() {
+    var i;
+    var j;
+    for (i = 0; i < starbursts.length; i++) {
+      var sb = starbursts[i];
+      var a = sb.life / sb.maxLife;
+      for (j = 0; j < sb.pts.length; j++) {
+        var p = sb.pts[j];
+        strokeGlow(p.color, 2, 12 * a);
+        ctx.beginPath();
+        ctx.moveTo(p.ax, p.ay);
+        ctx.lineTo(p.ax + (p.bx - p.ax) * a, p.ay + (p.by - p.ay) * a);
+        ctx.stroke();
+      }
+      clearGlow();
+    }
+  }
+
+  function projectGround(x, y, z) {
+    if (z < 30) {
+      return null;
+    }
+    var scale = FOV / z;
+    var horizon = H * 0.36;
+    return {
+      x: CX + (x + shipBank * z * 0.06) * scale,
+      y: horizon + (100 - y) * scale * 0.52,
+      z: z,
+      scale: scale,
+    };
+  }
+
+  function spawnSurfaceTower() {
+    var pts = towersRemaining > 3 ? 200 : 800;
+    surfaceTowers.push({
+      x: (Math.random() - 0.5) * 420,
+      z: 750 + Math.random() * 350,
+      h: 50 + Math.random() * 40,
       alive: true,
+      fired: false,
+      points: pts,
     });
+  }
+
+  function drawGroundGrid() {
+    var horizon = H * 0.36;
+    strokeGlow(WIRE_DIM, 1, 2);
+    var i;
+    for (i = 0; i < 8; i++) {
+      var t = ((i * 90 + surfaceScroll * 2) % 600) / 600;
+      var y = horizon + t * (H - horizon - 80);
+      var spread = 80 + t * (W * 0.45);
+      ctx.beginPath();
+      ctx.moveTo(CX - spread + shipBank * 40, y);
+      ctx.lineTo(CX + spread + shipBank * 40, y);
+      ctx.stroke();
+    }
+    clearGlow();
+  }
+
+  function drawGroundTower(tw) {
+    if (!tw.alive) {
+      return;
+    }
+    var p = projectGround(tw.x, 0, tw.z);
+    if (!p) {
+      return;
+    }
+    var hw = 22 * p.scale;
+    var hh = (tw.h + 30) * p.scale;
+    var x = p.x;
+    var y = p.y;
+    strokeGlow(WIRE_YELLOW, 2, 10);
+    ctx.strokeRect(x - hw, y - hh, hw * 2, hh);
+    ctx.beginPath();
+    ctx.moveTo(x - hw, y);
+    ctx.lineTo(x + hw, y);
+    ctx.stroke();
+    strokeGlow(WIRE_WHITE, 1, 6);
+    ctx.beginPath();
+    ctx.moveTo(x - hw * 0.6, y - hh);
+    ctx.lineTo(x + hw * 0.6, y - hh);
+    ctx.stroke();
+    clearGlow();
+  }
+
+  function drawGroundHazard(hz) {
+    var p = projectGround(hz.x, 0, hz.z);
+    if (!p) {
+      return;
+    }
+    var s = 18 * p.scale;
+    strokeGlow(WIRE_RED, 1, 6);
+    ctx.beginPath();
+    ctx.moveTo(p.x - s, p.y);
+    ctx.lineTo(p.x, p.y - s * 0.5);
+    ctx.lineTo(p.x + s, p.y);
+    ctx.closePath();
+    ctx.stroke();
+    clearGlow();
+  }
+
+  function spawnBarricade() {
+    var lanes = [-1, 0, 1];
+    var lane = lanes[Math.floor(Math.random() * lanes.length)];
+    var colors = [WIRE_PINK, WIRE_YELLOW, WIRE_CYAN];
+    barricades.push({
+      z: 480 + Math.random() * 120,
+      lane: lane,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      alive: true,
+      passed: false,
+    });
+  }
+
+  function drawBarricade(b) {
+    if (!b.alive) {
+      return;
+    }
+    var p = project(b.lane * 70 + shipX, b.lane * 35, b.z);
+    if (!p) {
+      return;
+    }
+    var w = 90 * p.scale;
+    var h = 50 * p.scale;
+    strokeGlow(b.color, 2, 10);
+    ctx.strokeRect(p.x - w, p.y - h, w * 2, h * 2);
+    clearGlow();
+  }
+
+  function drawArcadeHud() {
+    ctx.font = "bold 14px Consolas, monospace";
+    ctx.fillStyle = WIRE_GREEN;
+    ctx.fillText("SCORE", 14, 18);
+    ctx.font = "16px Consolas, monospace";
+    ctx.fillText(String(score), 14, 36);
+
+    ctx.font = "bold 13px Consolas, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("SHIELD", CX, 16);
+    var segs = Math.ceil(shield / 17);
+    if (segs <= 0) {
+      ctx.fillStyle = WIRE_RED;
+      ctx.fillText("SHIELD GONE", CX, 34);
+    } else {
+      ctx.fillStyle = WIRE_GREEN;
+      ctx.fillText(String(segs), CX, 34);
+      strokeGlow(WIRE_YELLOW, 1, 4);
+      ctx.beginPath();
+      ctx.moveTo(CX - 50, 42);
+      ctx.lineTo(CX + 50, 42);
+      ctx.lineTo(CX + 38, 52);
+      ctx.lineTo(CX - 38, 52);
+      ctx.closePath();
+      ctx.stroke();
+      clearGlow();
+      var i;
+      for (i = 0; i < 8; i++) {
+        var sx = CX - 42 + i * 12;
+        ctx.fillStyle = i < segs ? WIRE_YELLOW : WIRE_DIM;
+        ctx.fillRect(sx, 44, 8, 6);
+      }
+    }
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = WIRE_GREEN;
+    ctx.fillText(String(wave) + " WAVE", W - 14, 18);
+    if (stage === STAGE_SURFACE) {
+      ctx.fillStyle = WIRE_RED;
+      ctx.fillText("TOWERS " + towersRemaining, W - 14, 36);
+    } else if (stage === STAGE_BATTLE) {
+      ctx.fillText("FIGHTERS " + Math.max(0, tiesRequired - tiesKilled), W - 14, 36);
+    }
+
+    ctx.textAlign = "center";
+    if (hudHint) {
+      ctx.fillStyle = WIRE_GREEN;
+      ctx.fillText(hudHint, CX, 68);
+    }
+    ctx.textAlign = "left";
   }
 
   function tieScreenPos(t) {
@@ -571,11 +784,12 @@
       if (best) {
         best.alive = false;
         tiesKilled++;
-        score += 100 + wave * 15;
+        var pts = 100 + wave * 15;
+        score += pts;
         hitFlash = 0.15;
-        killFlash.push({ x: aimX, y: aimY, t: 12 });
-        spawnParticles(aimX, aimY, WIRE_YELLOW, 14, 4);
-        spawnFloatText(aimX, aimY - 20, "+" + (100 + wave * 15), WIRE_YELLOW);
+        var tp = tieScreenPos(best);
+        spawnStarburst(tp ? tp.x : aimX, tp ? tp.y : aimY, 28 + (tp ? tp.scale * 20 : 0));
+        spawnFloatText(aimX, aimY - 20, "+" + pts, WIRE_YELLOW);
         playKillSound();
         addShake(3);
         checkLifeBonuses();
@@ -584,27 +798,33 @@
       return;
     }
 
-    if (stage === STAGE_APPROACH) {
+    if (stage === STAGE_SURFACE) {
       var j;
-      for (j = 0; j < surfaceTargets.length; j++) {
-        var st = surfaceTargets[j];
-        if (!st.alive) {
+      for (j = 0; j < surfaceTowers.length; j++) {
+        var gt = surfaceTowers[j];
+        if (!gt.alive) {
           continue;
         }
-        var sp = project(st.lx, st.ly, deathStarZ + st.lz);
-        if (!sp) {
+        var gp = projectGround(gt.x, gt.h * 0.5, gt.z);
+        if (!gp) {
           continue;
         }
-        var sdx = sp.x - aimX;
-        var sdy = sp.y - aimY;
-        if (sdx * sdx + sdy * sdy < 400) {
-          st.alive = false;
+        var gdx = gp.x - aimX;
+        var gdy = gp.y - aimY;
+        var gw = 26 * gp.scale;
+        if (gdx * gdx + gdy * gdy < gw * gw) {
+          gt.alive = false;
           surfaceKilled++;
-          score += 200;
-          hitFlash = 0.12;
-          killFlash.push({ x: aimX, y: aimY, t: 10 });
-          spawnParticles(aimX, aimY, WIRE_RED, 10, 3);
+          if (towersRemaining > 0) {
+            towersRemaining--;
+          }
+          score += gt.points;
+          hitFlash = 0.15;
+          spawnStarburst(gp.x, gp.y - gw, 32);
+          spawnFloatText(gp.x, gp.y - 30, "+" + gt.points, WIRE_YELLOW);
+          hudHint = gt.points >= 800 ? "800 POINTS NEXT TOWER" : "200 POINTS NEXT TOWER";
           playKillSound();
+          addShake(4);
           updateHud();
           return;
         }
@@ -629,8 +849,7 @@
           tw.alive = false;
           score += 300;
           hitFlash = 0.12;
-          killFlash.push({ x: aimX, y: aimY, t: 10 });
-          spawnParticles(aimX, aimY, WIRE_CYAN, 10, 3);
+          spawnStarburst(tp.x, tp.y, 24);
           playKillSound();
           updateHud();
           return;
@@ -672,6 +891,22 @@
       vx: (dx / len) * spd,
       vy: (dy / len) * spd,
       life: 1.4,
+      mag: true,
+    });
+  }
+
+  function spawnMagentaBolt(sx, sy) {
+    var dx = aimX - sx;
+    var dy = aimY - sy;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var spd = 4.5 + wave * 0.25;
+    bolts.push({
+      sx: sx,
+      sy: sy,
+      vx: (dx / len) * spd,
+      vy: (dy / len) * spd,
+      life: 1.6,
+      mag: true,
     });
   }
 
@@ -778,7 +1013,7 @@
     updateBolts();
 
     if (tiesKilled >= tiesRequired && aliveTies() === 0) {
-      beginApproach();
+      beginSurface();
     }
   }
 
@@ -793,34 +1028,64 @@
     return n;
   }
 
-  function beginApproach() {
-    stage = STAGE_APPROACH;
+  function beginSurface() {
+    stage = STAGE_SURFACE;
     approachTimer = 0;
-    deathStarZ = 1700;
-    ties = [];
-    bolts = [];
-    surfaceTargets = [];
+    surfaceScroll = 0;
     surfaceKilled = 0;
-    surfaceRequired = 5 + wave;
+    surfaceTowers = [];
+    surfaceTowerAcc = 0;
+    bolts = [];
+    ties = [];
+    deathStarZ = 2400;
+    towersRemaining = 10 + wave * 3;
+    hudHint = "200 POINTS NEXT TOWER";
     var i;
-    for (i = 0; i < surfaceRequired + 3; i++) {
-      spawnSurfaceTarget();
+    for (i = 0; i < 5; i++) {
+      spawnSurfaceTower();
     }
   }
 
-  function updateApproach() {
+  function updateSurface() {
     approachTimer += dt * 60;
-    deathStarZ -= dtScale(5 + wave * 0.4);
-    var i;
-    for (i = surfaceTargets.length - 1; i >= 0; i--) {
-      if (!surfaceTargets[i].alive) {
-        surfaceTargets.splice(i, 1);
+    surfaceScroll += dtScale(5 + wave * 0.4);
+    shipBank = (aimX - CX) / CX;
+    deathStarZ -= dtScale(3);
+
+    surfaceTowerAcc += dt;
+    if (surfaceTowerAcc >= Math.max(0.5, 1.2 - wave * 0.05)) {
+      surfaceTowerAcc = 0;
+      if (towersRemaining > 0 && surfaceTowers.length < 6) {
+        spawnSurfaceTower();
       }
     }
-    if (surfaceKilled >= surfaceRequired || approachTimer > 280) {
-      if (deathStarZ < 320 || approachTimer > 280) {
-        beginTrench();
+
+    var i;
+    var spd = dt * 60;
+    for (i = surfaceTowers.length - 1; i >= 0; i--) {
+      var gt = surfaceTowers[i];
+      if (!gt.alive) {
+        surfaceTowers.splice(i, 1);
+        continue;
       }
+      gt.z -= (4.5 + wave * 0.35) * spd;
+      if (gt.z < 120 && !gt.fired) {
+        gt.fired = true;
+        var gp = projectGround(gt.x, gt.h, gt.z);
+        if (gp) {
+          spawnMagentaBolt(gp.x, gp.y - 20 * gp.scale);
+        }
+      }
+      if (gt.z < 20) {
+        gt.alive = false;
+        damagePlayer(15);
+      }
+    }
+
+    updateBolts();
+
+    if (towersRemaining <= 0 && surfaceTowers.length === 0) {
+      beginTrench();
     }
   }
 
@@ -834,6 +1099,9 @@
     shipX = 0;
     shipY = 0;
     bolts = [];
+    barricades = [];
+    barricadeAcc = 0;
+    hudHint = "FLY OVER / UNDER BARRICADES";
   }
 
   function spawnTower() {
@@ -862,8 +1130,38 @@
       spawnTower();
     }
 
+    barricadeAcc += dt;
+    if (barricadeAcc >= Math.max(0.45, 0.9 - wave * 0.03)) {
+      barricadeAcc = 0;
+      spawnBarricade();
+    }
+
     var i;
     var spd = dt * 60;
+    for (i = barricades.length - 1; i >= 0; i--) {
+      var b = barricades[i];
+      if (!b.alive) {
+        barricades.splice(i, 1);
+        continue;
+      }
+      b.z -= (trenchSpeed + 1.5) * spd;
+      if (b.z < 70 && !b.passed) {
+        b.passed = true;
+        var bp = project(b.lane * 70 + shipX, b.lane * 35, b.z);
+        var targetY = bp ? bp.y : CY + b.lane * 40;
+        if (Math.abs(aimY - targetY) < 42) {
+          damagePlayer(28);
+          spawnStarburst(aimX, aimY, 20);
+        } else {
+          score += 75;
+          spawnFloatText(aimX, aimY - 16, "+75", WIRE_CYAN);
+        }
+      }
+      if (b.z < 0) {
+        b.alive = false;
+      }
+    }
+
     for (i = towers.length - 1; i >= 0; i--) {
       var tw = towers[i];
       if (!tw.alive) {
@@ -959,6 +1257,9 @@
       shipX = ((aimX - CX) / CX) * 110;
       shipY = ((CY - aimY) / CY) * 55;
     }
+    if (stage === STAGE_SURFACE) {
+      shipBank = (aimX - CX) / CX;
+    }
 
     if (keys[" "] || keys.Spacebar) {
       fireLaser();
@@ -970,17 +1271,12 @@
     drawWireEdges(TIE_EDGES, t.x, t.y, t.z, t.scale, col, 8);
   }
 
-  function drawSurfaceTargets() {
+  function drawSurfaceScene() {
+    drawDeathStar(deathStarZ, WIRE_DIM);
+    drawGroundGrid();
     var i;
-    for (i = 0; i < surfaceTargets.length; i++) {
-      var st = surfaceTargets[i];
-      if (!st.alive) {
-        continue;
-      }
-      var s = 14;
-      drawLine3D(st.lx - s, st.ly, deathStarZ + st.lz, st.lx + s, st.ly, deathStarZ + st.lz, WIRE_RED, 2, 8);
-      drawLine3D(st.lx, st.ly - s, deathStarZ + st.lz, st.lx, st.ly + s, deathStarZ + st.lz, WIRE_RED, 2, 8);
-      drawLine3D(st.lx, st.ly, deathStarZ + st.lz, st.lx, st.ly, deathStarZ + st.lz + s, WIRE_YELLOW, 2, 6);
+    for (i = 0; i < surfaceTowers.length; i++) {
+      drawGroundTower(surfaceTowers[i]);
     }
   }
 
@@ -1067,48 +1363,66 @@
 
   function drawBolts() {
     var i;
-    strokeGlow(WIRE_RED, 2, 10);
     for (i = 0; i < bolts.length; i++) {
       var b = bolts[i];
+      var col = b.mag ? WIRE_MAGENTA : WIRE_RED;
+      strokeGlow(col, 2, 12);
+      if (b.mag) {
+        var j;
+        for (j = 0; j < 8; j++) {
+          var a = (j / 8) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(b.sx, b.sy);
+          ctx.lineTo(b.sx + Math.cos(a) * 10, b.sy + Math.sin(a) * 10);
+          ctx.stroke();
+        }
+      }
       ctx.beginPath();
       ctx.moveTo(b.sx, b.sy);
-      ctx.lineTo(b.sx - b.vx * 3, b.sy - b.vy * 3);
+      ctx.lineTo(b.sx - b.vx * 4, b.sy - b.vy * 4);
       ctx.stroke();
+      clearGlow();
     }
-    clearGlow();
   }
 
   function drawCockpit() {
-    strokeGlow(WIRE_DIM, 2, 4);
+    strokeGlow(WIRE_RED, 2, 6);
     ctx.beginPath();
     ctx.moveTo(0, H);
-    ctx.lineTo(W * 0.18, H * 0.7);
-    ctx.lineTo(W * 0.82, H * 0.7);
-    ctx.lineTo(W, H);
+    ctx.lineTo(W * 0.12, H * 0.78);
+    ctx.lineTo(W * 0.28, H * 0.72);
     ctx.stroke();
-    strokeGlow(WIRE_GREEN, 1, 3);
+    strokeGlow(WIRE_BLUE, 2, 6);
     ctx.beginPath();
-    ctx.moveTo(W * 0.18, H * 0.7);
-    ctx.lineTo(W * 0.82, H * 0.7);
+    ctx.moveTo(W, H);
+    ctx.lineTo(W * 0.88, H * 0.78);
+    ctx.lineTo(W * 0.72, H * 0.72);
+    ctx.stroke();
+    strokeGlow(WIRE_DIM, 1, 3);
+    ctx.beginPath();
+    ctx.moveTo(W * 0.12, H * 0.78);
+    ctx.lineTo(W * 0.88, H * 0.78);
     ctx.stroke();
     clearGlow();
   }
 
   function drawCrosshair() {
-    strokeGlow(WIRE_CYAN, 1, 8);
-    var r = 16;
+    strokeGlow(WIRE_CYAN, 2, 10);
+    var s = 10;
     ctx.beginPath();
-    ctx.arc(aimX, aimY, r, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(aimX - r - 8, aimY);
-    ctx.lineTo(aimX - 5, aimY);
-    ctx.moveTo(aimX + 5, aimY);
-    ctx.lineTo(aimX + r + 8, aimY);
-    ctx.moveTo(aimX, aimY - r - 8);
-    ctx.lineTo(aimX, aimY - 5);
-    ctx.moveTo(aimX, aimY + 5);
-    ctx.lineTo(aimX, aimY + r + 8);
+    ctx.moveTo(aimX - s - 8, aimY);
+    ctx.lineTo(aimX - 4, aimY);
+    ctx.lineTo(aimX - 4, aimY - 4);
+    ctx.lineTo(aimX, aimY - 4);
+    ctx.lineTo(aimX, aimY - s - 8);
+    ctx.moveTo(aimX + 4, aimY - 4);
+    ctx.lineTo(aimX + s + 8, aimY);
+    ctx.lineTo(aimX + 4, aimY);
+    ctx.lineTo(aimX + 4, aimY + 4);
+    ctx.lineTo(aimX, aimY + s + 8);
+    ctx.lineTo(aimX, aimY + 4);
+    ctx.lineTo(aimX - 4, aimY + 4);
+    ctx.closePath();
     ctx.stroke();
     clearGlow();
   }
@@ -1118,9 +1432,11 @@
       return;
     }
     var alpha = Math.min(1, laserFlash / 0.12);
-    strokeGlow("rgba(255,255,255," + alpha + ")", 3, 14);
+    strokeGlow("rgba(120,220,255," + alpha + ")", 2, 12);
     ctx.beginPath();
-    ctx.moveTo(CX, H - 24);
+    ctx.moveTo(W * 0.28, H * 0.72);
+    ctx.lineTo(aimX, aimY);
+    ctx.moveTo(W * 0.72, H * 0.72);
     ctx.lineTo(aimX, aimY);
     ctx.stroke();
     clearGlow();
@@ -1141,22 +1457,6 @@
       ctx.stroke();
       clearGlow();
     }
-  }
-
-  function drawStageLabel() {
-    var label = "";
-    if (stage === STAGE_BATTLE) {
-      label = "FIGHTERS: " + tiesKilled + "/" + tiesRequired;
-    } else if (stage === STAGE_APPROACH) {
-      label = "APPROACH — TARGETS: " + surfaceKilled + "/" + surfaceRequired;
-    } else if (stage === STAGE_TRENCH) {
-      label = "TRENCH RUN — AUTO THRUST";
-    } else if (stage === STAGE_EXPLODE) {
-      label = "IMPACT!";
-    }
-    ctx.fillStyle = WIRE_CYAN;
-    ctx.font = "13px monospace";
-    ctx.fillText(label, 12, H - 12);
   }
 
   function drawExplosion() {
@@ -1197,16 +1497,19 @@
     }
 
     var starSpeed = 1.2;
-    if (stage === STAGE_APPROACH) {
-      starSpeed = 2.8;
+    if (stage === STAGE_SURFACE) {
+      starSpeed = 2.2;
     }
     if (stage === STAGE_TRENCH) {
       starSpeed = 3.5;
     }
     drawStars(starSpeed);
 
+    var i;
     if (stage === STAGE_BATTLE) {
-      var i;
+      if (tiesKilled > tiesRequired * 0.5) {
+        drawDeathStar(1400 + Math.sin(gameTime) * 20, WIRE_DIM);
+      }
       ties.sort(function (a, b) {
         return b.z - a.z;
       });
@@ -1215,11 +1518,13 @@
           drawTie(ties[i]);
         }
       }
-    } else if (stage === STAGE_APPROACH) {
-      drawDeathStar(deathStarZ, WIRE_GREEN);
-      drawSurfaceTargets();
+    } else if (stage === STAGE_SURFACE) {
+      drawSurfaceScene();
     } else if (stage === STAGE_TRENCH) {
       drawTrench();
+      for (i = 0; i < barricades.length; i++) {
+        drawBarricade(barricades[i]);
+      }
       drawTowers();
     }
 
@@ -1227,9 +1532,10 @@
     drawCockpit();
     drawCrosshair();
     drawLaserBeam();
+    drawStarbursts();
     drawKillFlashes();
     drawParticles();
-    drawStageLabel();
+    drawArcadeHud();
     compositeToDisplay();
   }
 
@@ -1255,11 +1561,12 @@
 
     updateFlightControl();
     updateParticles();
+    updateStarbursts();
 
     if (stage === STAGE_BATTLE) {
       updateBattle();
-    } else if (stage === STAGE_APPROACH) {
-      updateApproach();
+    } else if (stage === STAGE_SURFACE) {
+      updateSurface();
     } else if (stage === STAGE_TRENCH) {
       updateTrench();
     } else if (stage === STAGE_EXPLODE) {
@@ -1367,8 +1674,8 @@
     if (stage === STAGE_BATTLE) {
       return "TIE fighter engagement";
     }
-    if (stage === STAGE_APPROACH) {
-      return "Death Star surface run";
+    if (stage === STAGE_SURFACE) {
+      return "Death Star surface attack";
     }
     if (stage === STAGE_TRENCH) {
       return "Trench run";
@@ -1653,9 +1960,17 @@
     tieSpawnAcc = 0;
     enemyShotAcc = 0;
     approachTimer = 0;
-    deathStarZ = 1700;
-    surfaceTargets = [];
+    deathStarZ = 2400;
+    surfaceTowers = [];
     surfaceKilled = 0;
+    towersRemaining = 0;
+    surfaceTowerAcc = 0;
+    surfaceScroll = 0;
+    barricades = [];
+    barricadeAcc = 0;
+    starbursts = [];
+    shipBank = 0;
+    hudHint = "";
     trenchProgress = 0;
     towers = [];
     towerSpawnAcc = 0;
@@ -1712,7 +2027,7 @@
     resetMission(wave);
     startMissionAfterReady(
       "GET READY!",
-      "Wave 1 — clear the TIE fighters, then attack the Death Star!"
+      "Wave 1 — clear TIE fighters, then attack the Death Star surface!"
     );
   }
 
