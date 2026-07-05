@@ -1,24 +1,20 @@
 /**
- * Player ship: mouse banks the world (via Camera), reticle sits near center
- * with a slight steer offset for feedback.
+ * Player at z = 0. Mouse banks world camera (x/y), not a free-floating crosshair.
  */
 export class Player {
   constructor(camera) {
     this.camera = camera;
   }
 
-  /**
-   * @param {import('../input/Input.js').Input} input
-   */
   update(input) {
     this.camera.setSteer(input.steerX, input.steerY);
   }
 
-  /** Screen-space aim point (slight offset from center). */
+  /** Reticle near center; slight feedback from bank. */
   aimScreen(width, height) {
     return {
-      x: width * 0.5 + this.camera.viewX * 1.6,
-      y: height * 0.45 + this.camera.viewY * 1.4,
+      x: width * 0.5 + this.camera.x * 0.08,
+      y: height * 0.5 + this.camera.y * 0.08,
     };
   }
 }

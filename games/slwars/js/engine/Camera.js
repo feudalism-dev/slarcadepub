@@ -1,73 +1,76 @@
 /**
- * Virtual camera + 3D→2D projection.
- * scale = focusDistance / z  (z is depth ahead of the camera).
+ * True Z-axis perspective projection.
+ *
+ * World: player at z = 0, horizon at z = 1000.
+ * scale = PERSPECTIVE_FACTOR / (PERSPECTIVE_FACTOR + z)
+ * screenX = (x * scale) + width/2
+ * screenY = (y * scale) + height/2
+ * drawnSize = originalSize * scale
  */
+export const PERSPECTIVE_FACTOR = 500;
+export const Z_HORIZON = 1000;
+export const Z_PLAYER = 0;
+
 export class Camera {
   constructor(width, height) {
     this.width = width;
     this.height = height;
     this.cx = width * 0.5;
-    this.cy = height * 0.45;
+    this.cy = height * 0.5;
+
+    /** World-space view bank (mouse steering shifts the world). */
     this.x = 0;
     this.y = 0;
-    this.z = 0;
-    this.focusDistance = 280;
-    this.zNear = 0.35;
-    this.zFar = 100;
-
-    /** Smoothed view bank (world shift from mouse steering). */
-    this.viewX = 0;
-    this.viewY = 0;
-    this._targetViewX = 0;
-    this._targetViewY = 0;
+    this._targetX = 0;
+    this._targetY = 0;
   }
 
-  /**
-   * Mouse offsets in [-1, 1] steer the world (inertia), not a fixed crosshair.
-   */
+  /** Mouse offsets in [-1, 1] bank the world with inertia. */
   setSteer(nx, ny) {
-    this._targetViewX = nx * 14;
-    this._targetViewY = ny * 9;
+    this._targetX = nx * 120;
+    this._targetY = ny * 80;
   }
 
   update(dt) {
     const k = 1 - Math.exp(-7 * dt);
-    this.viewX += (this._targetViewX - this.viewX) * k;
-    this.viewY += (this._targetViewY - this.viewY) * k;
-    this.x = this.viewX;
-    this.y = this.viewY;
+    this.x += (this._targetX - this.x) * k;
+    this.y += (this._targetY - this.y) * k;
   }
 
   /**
-   * Project world point to screen.
-   * @returns {{x:number,y:number,z:number,scale:number}|null}
+   * Perspective scale for a world z.
+   * Grows toward 1 as z → 0; shrinks toward 0 as z → horizon.
    */
-  project(wx, wy, wz) {
-    const z = wz - this.z;
-    if (z < this.zNear || z > this.zFar) {
+  scaleAt(z) {
+    if (z < Z_PLAYER) {
       return null;
     }
-    const scale = this.focusDistance / z;
+    return PERSPECTIVE_FACTOR / (PERSPECTIVE_FACTOR + z);
+  }
+
+  /**
+   * Project world (x, y, z) → screen.
+   * @returns {{x:number,y:number,z:number,scale:number,drawnSize:function}|null}
+   */
+  project(wx, wy, wz) {
+    if (wz <= Z_PLAYER) {
+      return null;
+    }
+    const scale = PERSPECTIVE_FACTOR / (PERSPECTIVE_FACTOR + wz);
     return {
       x: (wx - this.x) * scale + this.cx,
       y: (wy - this.y) * scale + this.cy,
-      z,
+      z: wz,
       scale,
     };
   }
 
-  /** Allow fly-past slightly closer than zNear for off-screen exit. */
-  projectFly(wx, wy, wz) {
-    const z = wz - this.z;
-    if (z < 0.12 || z > this.zFar) {
-      return null;
+  /** drawnSize = originalSize * scale */
+  drawnSize(originalSize, z) {
+    const scale = this.scaleAt(z);
+    if (scale === null) {
+      return 0;
     }
-    const scale = this.focusDistance / z;
-    return {
-      x: (wx - this.x) * scale + this.cx,
-      y: (wy - this.y) * scale + this.cy,
-      z,
-      scale,
-    };
+    return originalSize * scale;
   }
 }
