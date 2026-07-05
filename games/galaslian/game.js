@@ -412,6 +412,9 @@
 
   function updateHud() {
     var line = "SCORE " + score + "   WAVE " + level + "   LIVES " + lives;
+    if (phase === PHASE_PLAYING && running) {
+      line += "   ·   ESC = QUIT";
+    }
     if (bonusFlashTimer > 0) {
       line += "   |   " + bonusFlashText;
     }
@@ -564,7 +567,7 @@
     btnStart.textContent = "START";
     setOverlayButtons(true, false);
     setStartScreenExtras(true);
-    setQuitVisible(false);
+    setQuitVisible(true);
     if (lastLeaderboardData) {
       updateStartScores(lastLeaderboardData);
     }
@@ -993,10 +996,14 @@
   }
 
   function quitGame() {
-    if (phase === PHASE_MENU || phase === PHASE_OVER) {
+    if (phase === PHASE_OVER) {
       return;
     }
     resetDeathContinue();
+    if (phase === PHASE_MENU) {
+      SLArcade.endSession().catch(function () {});
+      return;
+    }
     phase = PHASE_MENU;
     running = false;
     playerBullets = [];
