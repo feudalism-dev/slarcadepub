@@ -574,11 +574,11 @@
         spawnTimer = 0;
         spawnEnemy();
         waveSpawnsLeft--;
-        spawnInterval = Math.max(28, spawnInterval - 1);
+        spawnInterval = Math.max(44, spawnInterval - 1);
       }
     }
 
-    if (wave >= 2 && flyerSpawnsLeft > 0) {
+    if (wave >= 3 && flyerSpawnsLeft > 0) {
       flyerSpawnTimer++;
       if (flyerSpawnTimer >= flyerSpawnInterval) {
         flyerSpawnTimer = 0;
@@ -1011,16 +1011,16 @@
     waveSpawnsLeft = waveEnemyCount();
     flyerSpawnsLeft = flyerSpawnsForWave();
     spawnTimer = 0;
-    spawnInterval = Math.max(32, 76 - wave * 5);
+    spawnInterval = Math.max(48, 92 - wave * 3);
     flyerSpawnTimer = 0;
-    flyerSpawnInterval = Math.max(220, 360 - wave * 15);
+    flyerSpawnInterval = Math.max(300, 460 - wave * 10);
     updateHud();
     var hint =
       waveSpawnsLeft + " inbound tracks detected. Click to fire interceptors.";
-    if (wave >= 2) {
+    if (wave >= 3) {
       hint += " Bombers inbound.";
     }
-    if (wave >= 4) {
+    if (wave >= 6) {
       hint += " Saucers spotted — shoot for bonus points.";
     }
     beginReadyCountdown("WAVE " + wave, hint);

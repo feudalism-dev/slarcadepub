@@ -41,14 +41,18 @@
   var GHOST_RELEASE_STAGGER = 150;
   var BOTTOM_PAD = 8;
   var TOP_PAD = 22;
-  var TILE = Math.floor((H - TOP_PAD - BOTTOM_PAD) / ROWS);
+  var TILE_H = Math.floor((H - TOP_PAD - BOTTOM_PAD) / ROWS);
+  var TILE_W = Math.floor(W / COLS);
+  var TILE = Math.min(TILE_H, TILE_W);
   if (TILE < 10) {
     TILE = 10;
   }
   var MAZE_W = COLS * TILE;
   var MAZE_H = ROWS * TILE;
   var OFF_X = Math.floor((W - MAZE_W) / 2);
-  var OFF_Y = TOP_PAD;
+  var OFF_Y = TOP_PAD + Math.floor((H - TOP_PAD - BOTTOM_PAD - MAZE_H) / 2);
+  var SNAP_THRESHOLD = Math.max(2, TILE * 0.08);
+  var MAX_FRAME_MS = 50;
 
   var DIR_NONE = 0;
   var DIR_UP = 1;
@@ -68,6 +72,17 @@
   var MODE_SCATTER = "scatter";
   var MODE_CHASE = "chase";
   var MODE_FRIGHTENED = "frightened";
+
+  var MODE_SCHEDULE = [
+    { mode: MODE_SCATTER, frames: 420 },
+    { mode: MODE_CHASE, frames: 1200 },
+    { mode: MODE_SCATTER, frames: 420 },
+    { mode: MODE_CHASE, frames: 1200 },
+    { mode: MODE_SCATTER, frames: 300 },
+    { mode: MODE_CHASE, frames: 1200 },
+    { mode: MODE_SCATTER, frames: 300 },
+    { mode: MODE_CHASE, frames: -1 },
+  ];
 
   var READY_FRAMES = 120;
   var STARTING_LIVES = 3;
@@ -123,8 +138,10 @@
   var player = null;
   var ghosts = [];
   var ghostMode = MODE_SCATTER;
-  var modeTimer = 0;
+  var modeScheduleIndex = 0;
+  var modeFrameCounter = 0;
   var frightenedTimer = 0;
+  var lastFrameTime = 0;
   var ghostCombo = 0;
   var mouthFrame = 0;
 
@@ -297,14 +314,18 @@
   }
 
   function playerSpeed() {
-    return 1.05 + level * 0.03;
+    return (TILE * (9 + level * 0.25)) / 1000;
   }
 
   function ghostSpeed(frightened) {
     if (frightened) {
-      return 0.42 + level * 0.015;
+      return (TILE * (5 + level * 0.15)) / 1000;
     }
-    return 0.56 + level * 0.025;
+    return (TILE * (7.5 + level * 0.2)) / 1000;
+  }
+
+  function eatenGhostSpeed() {
+    return (TILE * 20) / 1000;
   }
 
   function initLevel() {
@@ -319,7 +340,8 @@
       makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, 3, true),
     ];
     ghostMode = MODE_SCATTER;
-    modeTimer = 0;
+    modeScheduleIndex = 0;
+    modeFrameCounter = 0;
     frightenedTimer = 0;
     ghostCombo = 0;
   }
@@ -341,7 +363,17 @@
     };
   }
 
-  function validDirs(c, r, forbid) {
+  function isPenInterior(c, r) {
+    if (r < PEN_ROW_TOP || r > PEN_ROW_BOT) {
+      return false;
+    }
+    if (c <= PEN_COL_LEFT || c >= PEN_COL_RIGHT) {
+      return false;
+    }
+    return true;
+  }
+
+  function validDirs(c, r, forbid, allowPen) {
     var out = [];
     var d;
     for (d = 1; d <= 4; d++) {
@@ -354,6 +386,9 @@
         if (r === TUNNEL_ROW) {
           out.push(d);
         }
+        continue;
+      }
+      if (!allowPen && isPenInterior(nc, nr)) {
         continue;
       }
       if (canWalk(nc, nr)) {
@@ -386,19 +421,28 @@
   }
 
   function pickGhostDir(g) {
-    var opts = validDirs(g.c, g.r, oppositeDir(g.dir));
+    var allowPen = g.eaten || g.exiting || g.inPen;
+    var forbidOpposite = oppositeDir(g.dir);
+    var opts = validDirs(g.c, g.r, forbidOpposite, allowPen);
     if (!opts.length) {
-      return oppositeDir(g.dir) || g.dir;
+      opts = validDirs(g.c, g.r, DIR_NONE, allowPen);
+    }
+    if (!opts.length) {
+      return g.dir || DIR_LEFT;
     }
     if (opts.length === 1) {
       return opts[0];
     }
 
-    var target;
     if (frightenedTimer > 0 && !g.eaten) {
       return opts[Math.floor(Math.random() * opts.length)];
     }
 
+    if (g.exiting) {
+      return DIR_UP;
+    }
+
+    var target;
     if (ghostMode === MODE_SCATTER) {
       target = SCATTER_CORNERS[g.idx];
     } else {
@@ -427,17 +471,19 @@
       if (d < bestD) {
         bestD = d;
         best = opts[i];
+      } else if (d === bestD && opts[i] < best) {
+        best = opts[i];
       }
     }
     return best;
   }
 
-  function atTileCenter(actor) {
+  function isAtTileCenter(actor) {
     var p = tileCenter(actor.c, actor.r);
-    return Math.abs(actor.x - p.x) < 2.5 && Math.abs(actor.y - p.y) < 2.5;
+    return Math.abs(actor.x - p.x) < 0.5 && Math.abs(actor.y - p.y) < 0.5;
   }
 
-  function snapActor(actor) {
+  function snapToCenter(actor) {
     var p = tileCenter(actor.c, actor.r);
     actor.x = p.x;
     actor.y = p.y;
@@ -445,21 +491,35 @@
 
   function snapIfNearCenter(actor) {
     var p = tileCenter(actor.c, actor.r);
-    if (Math.abs(actor.x - p.x) < actor.speed + 1) {
+    if (Math.abs(actor.x - p.x) < SNAP_THRESHOLD) {
       actor.x = p.x;
     }
-    if (Math.abs(actor.y - p.y) < actor.speed + 1) {
+    if (Math.abs(actor.y - p.y) < SNAP_THRESHOLD) {
       actor.y = p.y;
     }
   }
 
-  function chooseDirAtTile(actor, isPlayer) {
-    if (!atTileCenter(actor)) {
-      snapIfNearCenter(actor);
+  function remainingToNextTile(actor) {
+    var nc = actor.c + DX[actor.dir];
+    var nr = actor.r + DY[actor.dir];
+    var target = tileCenter(nc, nr);
+    if (actor.dir === DIR_RIGHT) {
+      return target.x - actor.x;
     }
-    if (!atTileCenter(actor)) {
-      return;
+    if (actor.dir === DIR_LEFT) {
+      return actor.x - target.x;
     }
+    if (actor.dir === DIR_DOWN) {
+      return target.y - actor.y;
+    }
+    if (actor.dir === DIR_UP) {
+      return actor.y - target.y;
+    }
+    return 0;
+  }
+
+  function resolveDirAtCenter(actor, isPlayer) {
+    snapToCenter(actor);
     if (isPlayer) {
       if (actor.nextDir) {
         var nc = actor.c + DX[actor.nextDir];
@@ -475,6 +535,12 @@
         if (!canWalk(fc, fr)) {
           actor.dir = DIR_NONE;
         }
+      } else if (actor.nextDir) {
+        var sc = actor.c + DX[actor.nextDir];
+        var sr = actor.r + DY[actor.nextDir];
+        if (canWalk(sc, sr)) {
+          actor.dir = actor.nextDir;
+        }
       }
       return;
     }
@@ -483,63 +549,103 @@
       return;
     }
     actor.dir = pickGhostDir(actor);
-    actor.speed = ghostSpeed(frightenedTimer > 0 && !actor.eaten);
+    actor.speed = actor.eaten ? eatenGhostSpeed() : ghostSpeed(frightenedTimer > 0);
   }
 
-  function moveActor(actor, isPlayer) {
-    chooseDirAtTile(actor, isPlayer);
-    if (!actor.dir) {
-      return;
+  function handleTunnelWrap(actor, isPlayer) {
+    if (actor.r !== TUNNEL_ROW) {
+      return false;
     }
+    if (actor.dir === DIR_LEFT && actor.x < OFF_X - TILE * 0.5) {
+      actor.c = COLS - 1;
+      snapToCenter(actor);
+      if (isPlayer) {
+        eatAt(actor.c, actor.r);
+      }
+      return true;
+    }
+    if (actor.dir === DIR_RIGHT && actor.x > OFF_X + MAZE_W + TILE * 0.5) {
+      actor.c = 0;
+      snapToCenter(actor);
+      if (isPlayer) {
+        eatAt(actor.c, actor.r);
+      }
+      return true;
+    }
+    return false;
+  }
 
-    var spd = actor.speed;
-    actor.x += DX[actor.dir] * spd;
-    actor.y += DY[actor.dir] * spd;
+  function moveActor(actor, isPlayer, elapsedMs) {
+    var distLeft = actor.speed * elapsedMs;
+    var safety = 0;
 
-    var nc = actor.c + DX[actor.dir];
-    var nr = actor.r + DY[actor.dir];
+    while (distLeft > 0.01 && safety < 8) {
+      safety++;
 
-    if (actor.r === TUNNEL_ROW && (actor.dir === DIR_LEFT || actor.dir === DIR_RIGHT)) {
-      if (actor.x < OFF_X - 2) {
-        actor.c = COLS - 1;
-        snapActor(actor);
+      if (handleTunnelWrap(actor, isPlayer)) {
+        continue;
+      }
+
+      if (!actor.dir) {
+        if (isAtTileCenter(actor)) {
+          resolveDirAtCenter(actor, isPlayer);
+        } else {
+          snapIfNearCenter(actor);
+          if (isAtTileCenter(actor)) {
+            resolveDirAtCenter(actor, isPlayer);
+          }
+        }
+        if (!actor.dir) {
+          return;
+        }
+      }
+
+      if (isAtTileCenter(actor)) {
+        resolveDirAtCenter(actor, isPlayer);
+        if (!actor.dir) {
+          return;
+        }
+      } else {
+        snapIfNearCenter(actor);
+      }
+
+      var nc = actor.c + DX[actor.dir];
+      var nr = actor.r + DY[actor.dir];
+      if (actor.r === TUNNEL_ROW && (actor.dir === DIR_LEFT || actor.dir === DIR_RIGHT)) {
+        if (nc < 0 || nc >= COLS) {
+          nc = wrapCol(nc);
+        }
+      }
+      if (!canWalk(nc, nr)) {
+        snapToCenter(actor);
+        actor.dir = DIR_NONE;
+        return;
+      }
+
+      var step = remainingToNextTile(actor);
+      if (step <= 0.01) {
+        actor.c = nc;
+        actor.r = nr;
+        snapToCenter(actor);
         if (isPlayer) {
           eatAt(actor.c, actor.r);
         }
-        return;
+        continue;
       }
-      if (actor.x > OFF_X + COLS * TILE + 2) {
-        actor.c = 0;
-        snapActor(actor);
+
+      if (distLeft >= step) {
+        actor.c = nc;
+        actor.r = nr;
+        snapToCenter(actor);
+        distLeft -= step;
         if (isPlayer) {
           eatAt(actor.c, actor.r);
         }
-        return;
+      } else {
+        actor.x += DX[actor.dir] * distLeft;
+        actor.y += DY[actor.dir] * distLeft;
+        distLeft = 0;
       }
-    }
-
-    if (!canWalk(nc, nr)) {
-      snapActor(actor);
-      actor.dir = DIR_NONE;
-      return;
-    }
-
-    var target = tileCenter(nc, nr);
-    var reached =
-      (actor.dir === DIR_RIGHT && actor.x >= target.x) ||
-      (actor.dir === DIR_LEFT && actor.x <= target.x) ||
-      (actor.dir === DIR_DOWN && actor.y >= target.y) ||
-      (actor.dir === DIR_UP && actor.y <= target.y);
-
-    if (!reached) {
-      return;
-    }
-
-    actor.c = nc;
-    actor.r = nr;
-    snapActor(actor);
-    if (isPlayer) {
-      eatAt(actor.c, actor.r);
     }
   }
 
@@ -567,6 +673,15 @@
     }
   }
 
+  function reverseAllGhosts() {
+    var i;
+    for (i = 0; i < ghosts.length; i++) {
+      if (!ghosts[i].eaten && !ghosts[i].inPen) {
+        ghosts[i].dir = oppositeDir(ghosts[i].dir) || ghosts[i].dir;
+      }
+    }
+  }
+
   function updateModeTimer() {
     if (frightenedTimer > 0) {
       frightenedTimer--;
@@ -580,25 +695,34 @@
       }
       return;
     }
-    modeTimer++;
-    var cycle = 420;
-  if (level > 1) {
-      cycle = 360;
+    var entry = MODE_SCHEDULE[modeScheduleIndex];
+    if (!entry) {
+      return;
     }
-    if (modeTimer >= cycle) {
-      modeTimer = 0;
-      ghostMode = ghostMode === MODE_SCATTER ? MODE_CHASE : MODE_SCATTER;
+    ghostMode = entry.mode;
+    if (entry.frames < 0) {
+      return;
+    }
+    modeFrameCounter++;
+    if (modeFrameCounter >= entry.frames) {
+      modeScheduleIndex++;
+      modeFrameCounter = 0;
+      entry = MODE_SCHEDULE[modeScheduleIndex];
+      if (entry) {
+        ghostMode = entry.mode;
+        reverseAllGhosts();
+      }
     }
   }
 
-  function updateGhosts() {
+  function updateGhosts(elapsedMs) {
     var i;
     for (i = 0; i < ghosts.length; i++) {
       var g = ghosts[i];
       if (g.eaten) {
-        g.speed = 1.1;
+        g.speed = eatenGhostSpeed();
         g.dir = DIR_UP;
-        moveActor(g, false);
+        moveActor(g, false, elapsedMs);
         if (g.r <= PEN_ROW_MID && g.c >= PEN_DOOR_COL - 1 && g.c <= PEN_DOOR_COL + 1) {
           g.eaten = false;
           g.inPen = true;
@@ -606,7 +730,7 @@
           g.releaseTimer = GHOST_RELEASE_BASE;
           g.c = PEN_DOOR_COL;
           g.r = PEN_ROW_MID;
-          snapActor(g);
+          snapToCenter(g);
           g.y += g.idx * 3;
           g.speed = ghostSpeed(false);
         }
@@ -617,7 +741,7 @@
         g.dir = DIR_NONE;
         g.c = PEN_DOOR_COL;
         g.r = PEN_ROW_MID;
-        snapActor(g);
+        snapToCenter(g);
         g.y += Math.sin(frame * 0.1 + g.idx * 1.7) * 0.35 + g.idx * 3;
         if (g.releaseTimer <= 0) {
           g.exiting = true;
@@ -628,14 +752,14 @@
       }
       if (g.inPen && g.exiting) {
         g.c = PEN_DOOR_COL;
-        moveActor(g, false);
+        moveActor(g, false, elapsedMs);
         if (g.r <= PEN_ROW_TOP - 1) {
           g.inPen = false;
           g.exiting = false;
         }
         continue;
       }
-      moveActor(g, false);
+      moveActor(g, false, elapsedMs);
     }
   }
 
@@ -709,7 +833,8 @@
     }
     frightenedTimer = 0;
     ghostMode = MODE_SCATTER;
-    modeTimer = 0;
+    modeScheduleIndex = 0;
+    modeFrameCounter = 0;
     beginReadyCountdown("GET READY!", "Ghosts are hungry again…");
   }
 
@@ -720,21 +845,11 @@
     }
   }
 
-  function updatePlaying() {
+  function updatePlaying(elapsedMs) {
     frame++;
     animFrame++;
     if (animFrame % 6 === 0) {
       mouthFrame = 1 - mouthFrame;
-    }
-
-    if (keys.ArrowUp || keys.w || keys.W) {
-      player.nextDir = DIR_UP;
-    } else if (keys.ArrowDown || keys.s || keys.S) {
-      player.nextDir = DIR_DOWN;
-    } else if (keys.ArrowLeft || keys.a || keys.A) {
-      player.nextDir = DIR_LEFT;
-    } else if (keys.ArrowRight || keys.d || keys.D) {
-      player.nextDir = DIR_RIGHT;
     }
 
     if (player.dir === DIR_NONE && player.nextDir) {
@@ -743,14 +858,14 @@
       }
     }
 
-    moveActor(player, true);
+    moveActor(player, true, elapsedMs);
     updateModeTimer();
-    updateGhosts();
+    updateGhosts(elapsedMs);
     checkCollisions();
     checkLevelComplete();
   }
 
-  function update() {
+  function update(elapsedMs) {
     if (phase === PHASE_READY) {
       readyTimer--;
       if (readyTimer <= 0) {
@@ -762,7 +877,7 @@
       return;
     }
     if (phase === PHASE_PLAYING && running) {
-      updatePlaying();
+      updatePlaying(elapsedMs);
     }
   }
 
@@ -884,9 +999,14 @@
     }
   }
 
-  function loop() {
+  function loop(now) {
+    if (!lastFrameTime) {
+      lastFrameTime = now;
+    }
+    var elapsedMs = Math.min(MAX_FRAME_MS, now - lastFrameTime);
+    lastFrameTime = now;
     try {
-      update();
+      update(elapsedMs);
       draw();
     } catch (err) {
       console.error("Munchman loop error:", err);
@@ -1157,8 +1277,28 @@
     }
   }
 
+  function keyToDir(key) {
+    if (key === "ArrowUp" || key === "w" || key === "W") {
+      return DIR_UP;
+    }
+    if (key === "ArrowDown" || key === "s" || key === "S") {
+      return DIR_DOWN;
+    }
+    if (key === "ArrowLeft" || key === "a" || key === "A") {
+      return DIR_LEFT;
+    }
+    if (key === "ArrowRight" || key === "d" || key === "D") {
+      return DIR_RIGHT;
+    }
+    return DIR_NONE;
+  }
+
   window.addEventListener("keydown", function (e) {
     keys[e.key] = true;
+    var dir = keyToDir(e.key);
+    if (dir && player && (phase === PHASE_PLAYING || phase === PHASE_READY)) {
+      player.nextDir = dir;
+    }
     if (e.key === "Escape" && phase !== PHASE_MENU && phase !== PHASE_OVER) {
       quitGame();
     }
