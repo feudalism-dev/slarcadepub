@@ -17,18 +17,18 @@
         background: #020208;
       }
     </style>
-    <link rel="stylesheet" href="style.css?v=5" />
+    <link rel="stylesheet" href="style.css?v=7" />
   </head>
   <body>
     <div id="app">
       <div id="game-wrap">
-        <canvas id="game" width="768" height="640"></canvas>
+        <canvas id="game" width="640" height="480"></canvas>
         <div id="hud"></div>
         <div id="shield-bar" aria-hidden="true"><span id="shield-fill"></span></div>
         <div id="overlay">
           <div>
             <h1 id="overlay-title">SL WARS</h1>
-            <p id="instructions">Arcade-inspired Death Star run — dogfight, surface towers, trench barricades, exhaust port. Mouse to aim; click to fire. Shoot incoming fireballs for bonus points.</p>
+            <p id="instructions">Mouse aims. WASD / arrows dodge. Click or Space fires. Survive TIEs, clear surface towers, weave the trench, then launch a proton torpedo into the exhaust port.</p>
             <p id="player-line">Player: …</p>
             <div id="start-scores" class="start-scores">
               <p id="personal-score">Your top score: —</p>
@@ -55,6 +55,6 @@
       </div>
     </div>
     <script src="../../shared/sl-api.js?v=18"></script>
-    <script src="game.js?v=6"></script>
+    <script src="game.js?v=7"></script>
   </body>
 </html>

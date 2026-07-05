@@ -95,8 +95,15 @@
   var mouseTargetY = CY;
   var shipX = 0;
   var shipY = 0;
+  var dodgeX = 0;
+  var dodgeY = 0;
   var lastShot = 0;
   var fireCooldownMs = 110;
+  var fireQueued = false;
+  var torpedoFlash = 0;
+
+  var BOLT_POOL_MAX = 48;
+  var boltPool = [];
 
   var particles = [];
   var floatTexts = [];
@@ -159,6 +166,8 @@
   var trenchShotsFired = 0;
   var surfaceHazards = [];
   var exhaustMissHandled = false;
+  var pursuitTie = null;
+  var pursuitSpawned = false;
 
   function setGameActive(active) {
     gameWrap.classList.toggle("game-active", !!active);
@@ -309,8 +318,8 @@
     displayCtx.fillStyle = "#000";
     displayCtx.fillRect(0, 0, W, H);
     displayCtx.save();
-    displayCtx.globalAlpha = 0.5;
-    displayCtx.filter = "blur(3px)";
+    displayCtx.globalAlpha = 0.35;
+    displayCtx.filter = "blur(2px)";
     displayCtx.drawImage(worldCanvas, shakeX, shakeY);
     displayCtx.restore();
     displayCtx.globalAlpha = 1;
@@ -351,7 +360,7 @@
       return;
     }
     onPointerMove(e);
-    fireLaser();
+    queueFire();
     e.preventDefault();
   }
 
@@ -601,8 +610,42 @@
     drawLine3D(0, -35, z + 145, 0, -35, z + 175, WIRE_RED, 2, 8);
   }
 
+  function acquireBolt() {
+    var b = boltPool.pop();
+    if (!b) {
+      b = { sx: 0, sy: 0, vx: 0, vy: 0, life: 0, mag: false };
+    }
+    return b;
+  }
+
+  function releaseBolt(b) {
+    if (boltPool.length < BOLT_POOL_MAX) {
+      boltPool.push(b);
+    }
+  }
+
+  function clearBolts() {
+    var i;
+    for (i = 0; i < bolts.length; i++) {
+      releaseBolt(bolts[i]);
+    }
+    bolts.length = 0;
+  }
+
+  function queueFire() {
+    fireQueued = true;
+  }
+
+  function playerHitX() {
+    return CX + dodgeX;
+  }
+
+  function playerHitY() {
+    return CY + dodgeY + 20;
+  }
+
   function spawnTie() {
-    var pattern = Math.floor(Math.random() * 3);
+    var pattern = Math.floor(Math.random() * 4);
     var t = {
       x: (Math.random() - 0.5) * 600,
       y: (Math.random() - 0.5) * 320,
@@ -614,6 +657,7 @@
       scale: 1,
       pattern: pattern,
       phase: Math.random() * Math.PI * 2,
+      orbitR: 80 + Math.random() * 120,
       isVader: false,
     };
     if (Math.random() < 0.07 + wave * 0.012) {
@@ -624,6 +668,11 @@
     if (pattern === 1) {
       t.x = (Math.random() < 0.5 ? -1 : 1) * (280 + Math.random() * 120);
       t.vx = -t.x * 0.002;
+    }
+    if (pattern === 3) {
+      t.x = 0;
+      t.y = 40;
+      t.z = 1100 + Math.random() * 200;
     }
     ties.push(t);
   }
@@ -859,10 +908,20 @@
 
   function fireLaser() {
     var now = performance.now();
-    if (now - lastShot < fireCooldownMs) {
+    var cooldown = fireCooldownMs;
+    if (stage === STAGE_TRENCH && exhaustVisible && !exhaustHit) {
+      cooldown = 280;
+    }
+    if (now - lastShot < cooldown) {
       return;
     }
     lastShot = now;
+
+    if (stage === STAGE_TRENCH && exhaustVisible && !exhaustHit) {
+      fireProtonTorpedo();
+      return;
+    }
+
     laserFlash = 0.12;
     playLaserSound();
 
@@ -872,6 +931,7 @@
       var bdx = bolt.sx - aimX;
       var bdy = bolt.sy - aimY;
       if (bdx * bdx + bdy * bdy < 625) {
+        releaseBolt(bolt);
         bolts.splice(bi, 1);
         score += 50 + wave * 5;
         spawnStarburst(bolt.sx, bolt.sy, 14);
@@ -884,6 +944,24 @@
 
     if (stage === STAGE_TRENCH) {
       trenchShotsFired++;
+    }
+
+    if (pursuitTie && pursuitTie.alive) {
+      var pp = project(pursuitTie.x, pursuitTie.y, pursuitTie.z);
+      if (pp) {
+        var pdx = pp.x - aimX;
+        var pdy = pp.y - aimY;
+        if (pdx * pdx + pdy * pdy < 900) {
+          pursuitTie.alive = false;
+          score += 500;
+          spawnStarburst(pp.x, pp.y, 22);
+          spawnDebris(pursuitTie.x, pursuitTie.y, pursuitTie.z, 0.7, WIRE_GREEN);
+          spawnFloatText(pp.x, pp.y - 16, "+500", WIRE_YELLOW);
+          playKillSound();
+          updateHud();
+          return;
+        }
+      }
     }
 
     if (stage === STAGE_BATTLE) {
@@ -983,30 +1061,38 @@
           return;
         }
       }
-      if (exhaustVisible && !exhaustHit) {
-        var ex = project(shipX, shipY - 30, 120);
-        if (ex) {
-          var edx = ex.x - aimX;
-          var edy = ex.y - aimY;
-          if (edx * edx + edy * edy < 350) {
-            exhaustHit = true;
-            var basePts = 5000 + wave * 500;
-            score += basePts;
-            if (trenchShotsFired <= 1) {
-              score += 10000;
-              spawnFloatText(aimX, aimY - 50, "USE THE FORCE!", WIRE_CYAN);
-            }
-            hitFlash = 0.5;
-            spawnParticles(aimX, aimY, WIRE_RED, 40, 8);
-            spawnStarburst(ex.x, ex.y, 40);
-            spawnFloatText(aimX, aimY - 30, "BULLSEYE!", WIRE_RED);
-            playExplosionSound();
-            addShake(14);
-            updateHud();
-            beginExplosion();
-          }
-        }
+    }
+  }
+
+  function fireProtonTorpedo() {
+    trenchShotsFired++;
+    torpedoFlash = 0.35;
+    playLaserSound();
+    playTone(220, 0.2, "sawtooth", 0.05);
+    var ex = project(shipX, shipY - 30, 120);
+    if (!ex) {
+      return;
+    }
+    var edx = ex.x - aimX;
+    var edy = ex.y - aimY;
+    if (edx * edx + edy * edy < 420) {
+      exhaustHit = true;
+      var basePts = 5000 + wave * 500;
+      score += basePts;
+      if (trenchShotsFired <= 1) {
+        score += 10000;
+        spawnFloatText(aimX, aimY - 50, "USE THE FORCE!", WIRE_CYAN);
       }
+      hitFlash = 0.5;
+      spawnParticles(aimX, aimY, WIRE_RED, 40, 8);
+      spawnStarburst(ex.x, ex.y, 40);
+      spawnFloatText(aimX, aimY - 30, "TORPEDO HIT!", WIRE_RED);
+      playExplosionSound();
+      addShake(14);
+      updateHud();
+      beginExplosion();
+    } else {
+      spawnFloatText(aimX, aimY - 20, "MISSED PORT", WIRE_YELLOW);
     }
   }
 
@@ -1015,33 +1101,37 @@
     if (!p) {
       return;
     }
-    var dx = aimX - p.x;
-    var dy = aimY - p.y;
+    var hx = playerHitX();
+    var hy = playerHitY();
+    var dx = hx - p.x;
+    var dy = hy - p.y;
     var len = Math.sqrt(dx * dx + dy * dy) || 1;
     var spd = 5 + wave * 0.3;
-    bolts.push({
-      sx: p.x,
-      sy: p.y,
-      vx: (dx / len) * spd,
-      vy: (dy / len) * spd,
-      life: 1.4,
-      mag: true,
-    });
+    var b = acquireBolt();
+    b.sx = p.x;
+    b.sy = p.y;
+    b.vx = (dx / len) * spd;
+    b.vy = (dy / len) * spd;
+    b.life = 1.4;
+    b.mag = true;
+    bolts.push(b);
   }
 
   function spawnMagentaBolt(sx, sy) {
-    var dx = aimX - sx;
-    var dy = aimY - sy;
+    var hx = playerHitX();
+    var hy = playerHitY();
+    var dx = hx - sx;
+    var dy = hy - sy;
     var len = Math.sqrt(dx * dx + dy * dy) || 1;
     var spd = 4.5 + wave * 0.25;
-    bolts.push({
-      sx: sx,
-      sy: sy,
-      vx: (dx / len) * spd,
-      vy: (dy / len) * spd,
-      life: 1.6,
-      mag: true,
-    });
+    var b = acquireBolt();
+    b.sx = sx;
+    b.sy = sy;
+    b.vx = (dx / len) * spd;
+    b.vy = (dy / len) * spd;
+    b.life = 1.6;
+    b.mag = true;
+    bolts.push(b);
   }
 
   function damagePlayer(amount) {
@@ -1071,20 +1161,24 @@
 
   function updateBolts() {
     var i;
+    var hx = playerHitX();
+    var hy = playerHitY();
     for (i = bolts.length - 1; i >= 0; i--) {
       var b = bolts[i];
       b.sx += b.vx * dt * 60;
       b.sy += b.vy * dt * 60;
       b.life -= dt;
       if (b.life <= 0) {
+        releaseBolt(b);
         bolts.splice(i, 1);
         continue;
       }
-      var dx = b.sx - aimX;
-      var dy = b.sy - aimY;
-      if (dx * dx + dy * dy < 100) {
+      var dx = b.sx - hx;
+      var dy = b.sy - hy;
+      if (dx * dx + dy * dy < 120) {
+        releaseBolt(b);
         bolts.splice(i, 1);
-        damagePlayer(18 + wave * 2);
+        damagePlayer(1);
       }
     }
   }
@@ -1130,6 +1224,9 @@
       } else if (t.pattern === 2) {
         t.x += Math.sin(gameTime * 3 + t.phase) * 2.5 * spd;
         t.y += Math.cos(gameTime * 2.4 + t.phase) * 1.8 * spd;
+      } else if (t.pattern === 3) {
+        t.x = Math.cos(gameTime * 2.2 + t.phase) * t.orbitR;
+        t.y = Math.sin(gameTime * 2.2 + t.phase) * t.orbitR * 0.55;
       } else {
         t.x += t.vx * spd;
         t.y += Math.sin(gameTime * 2.4 + t.phase) * 0.8 * spd;
@@ -1137,12 +1234,12 @@
       t.z -= t.speed * spd;
       if (t.z < 25) {
         t.alive = false;
-        damagePlayer(40);
+        damagePlayer(1);
       }
     }
 
     enemyShotAcc += dt;
-    if (enemyShotAcc >= Math.max(0.35, 0.8 - wave * 0.05)) {
+    if (enemyShotAcc >= Math.max(0.28, 0.75 - wave * 0.05)) {
       enemyShotAcc = 0;
       tryEnemyShot();
     }
@@ -1186,7 +1283,7 @@
     surfaceTowers = [];
     surfaceTowerAcc = 0;
     surfaceHazards = [];
-    bolts = [];
+    clearBolts();
     ties = [];
     deathStarZ = 2400;
     towersRemaining = 10 + wave * 3;
@@ -1203,7 +1300,6 @@
   function updateSurface() {
     approachTimer += dt * 60;
     surfaceScroll += dtScale(5 + wave * 0.4);
-    shipBank = (aimX - CX) / CX;
     deathStarZ -= dtScale(3);
 
     surfaceTowerAcc += dt;
@@ -1277,11 +1373,14 @@
     exhaustHit = false;
     shipX = 0;
     shipY = 0;
-    bolts = [];
+    clearBolts();
     barricades = [];
     barricadeAcc = 0;
     trenchShotsFired = 0;
     exhaustMissHandled = false;
+    pursuitTie = null;
+    pursuitSpawned = false;
+    trenchSpeed = 2.8 + wave * 0.25;
     hudHint = "FLY OVER / UNDER BARRICADES";
   }
 
@@ -1292,11 +1391,26 @@
     exhaustVisible = false;
     exhaustHit = false;
     exhaustMissHandled = false;
-    bolts = [];
+    clearBolts();
     barricades = [];
     barricadeAcc = 0;
     trenchShotsFired = 0;
+    pursuitTie = null;
+    pursuitSpawned = false;
     hudHint = "MISSED PORT — RETRY TRENCH";
+  }
+
+  function spawnPursuitTie() {
+    pursuitTie = {
+      x: (Math.random() - 0.5) * 40,
+      y: 10 + Math.random() * 20,
+      z: 55,
+      alive: true,
+      fireAcc: 0,
+      phase: Math.random() * Math.PI * 2,
+    };
+    pursuitSpawned = true;
+    hudHint = "TIE ON YOUR TAIL!";
   }
 
   function spawnTower() {
@@ -1373,6 +1487,19 @@
       }
     }
 
+    if (!pursuitSpawned && trenchProgress > 160 && trenchProgress < 420) {
+      spawnPursuitTie();
+    }
+    if (pursuitTie && pursuitTie.alive) {
+      pursuitTie.x = Math.sin(gameTime * 2.4 + pursuitTie.phase) * 30;
+      pursuitTie.y = 8 + Math.cos(gameTime * 1.8 + pursuitTie.phase) * 12;
+      pursuitTie.fireAcc += dt;
+      if (pursuitTie.fireAcc >= Math.max(0.55, 1.0 - wave * 0.06)) {
+        pursuitTie.fireAcc = 0;
+        spawnBolt(pursuitTie.x, pursuitTie.y, pursuitTie.z);
+      }
+    }
+
     updateBolts();
 
     if (trenchProgress > 560 && exhaustVisible && !exhaustHit && !exhaustMissHandled) {
@@ -1416,50 +1543,54 @@
   }
 
   function updateFlightControl() {
-    var rate = stage === STAGE_TRENCH ? 16 : 22;
+    var rate = stage === STAGE_TRENCH ? 14 : 18;
     var k = 1 - Math.exp(-rate * dt);
     aimX += (mouseTargetX - aimX) * k;
     aimY += (mouseTargetY - aimY) * k;
 
-    var keySpd = dtScale(9);
+    var dodgeTargetX = 0;
+    var dodgeTargetY = 0;
+    var keySpd = 55;
     if (keys.ArrowLeft || keys.a || keys.A) {
-      mouseTargetX -= keySpd;
+      dodgeTargetX -= keySpd;
     }
     if (keys.ArrowRight || keys.d || keys.D) {
-      mouseTargetX += keySpd;
+      dodgeTargetX += keySpd;
     }
     if (keys.ArrowUp || keys.w || keys.W) {
-      mouseTargetY -= keySpd;
+      dodgeTargetY -= keySpd * 0.7;
     }
     if (keys.ArrowDown || keys.s || keys.S) {
-      mouseTargetY += keySpd;
+      dodgeTargetY += keySpd * 0.7;
     }
+    var dk = 1 - Math.exp(-10 * dt);
+    dodgeX += (dodgeTargetX - dodgeX) * dk;
+    dodgeY += (dodgeTargetY - dodgeY) * dk;
 
-    if (aimX < 30) {
-      aimX = 30;
+    if (aimX < 24) {
+      aimX = 24;
     }
-    if (aimX > W - 30) {
-      aimX = W - 30;
+    if (aimX > W - 24) {
+      aimX = W - 24;
     }
-    if (aimY < 30) {
-      aimY = 30;
+    if (aimY < 24) {
+      aimY = 24;
     }
-    if (aimY > H - 70) {
-      aimY = H - 70;
+    if (aimY > H - 56) {
+      aimY = H - 56;
     }
-    mouseTargetX = aimX;
-    mouseTargetY = aimY;
 
     if (stage === STAGE_TRENCH) {
-      shipX = ((aimX - CX) / CX) * 110;
-      shipY = ((CY - aimY) / CY) * 55;
-    }
-    if (stage === STAGE_SURFACE) {
-      shipBank = (aimX - CX) / CX;
+      shipX = ((aimX - CX) / CX) * 110 + dodgeX * 0.35;
+      shipY = ((CY - aimY) / CY) * 55 - dodgeY * 0.25;
+    } else if (stage === STAGE_SURFACE) {
+      shipBank = (aimX - CX) / CX + dodgeX * 0.004;
+    } else {
+      shipBank = dodgeX * 0.008;
     }
 
     if (keys[" "] || keys.Spacebar) {
-      fireLaser();
+      queueFire();
     }
   }
 
@@ -1657,11 +1788,28 @@
   }
 
   function drawLaserBeam() {
+    if (torpedoFlash > 0) {
+      var ta = Math.min(1, torpedoFlash / 0.35);
+      strokeGlow("rgba(255,200,60," + ta + ")", 4, 16);
+      ctx.beginPath();
+      ctx.moveTo(CX, H * 0.78);
+      ctx.lineTo(aimX, aimY);
+      ctx.stroke();
+      strokeGlow("rgba(255,80,60," + ta + ")", 2, 10);
+      ctx.beginPath();
+      ctx.moveTo(CX - 8, H * 0.78);
+      ctx.lineTo(aimX, aimY);
+      ctx.moveTo(CX + 8, H * 0.78);
+      ctx.lineTo(aimX, aimY);
+      ctx.stroke();
+      clearGlow();
+      return;
+    }
     if (laserFlash <= 0) {
       return;
     }
     var alpha = Math.min(1, laserFlash / 0.12);
-    strokeGlow("rgba(120,220,255," + alpha + ")", 2, 12);
+    strokeGlow("rgba(120,220,255," + alpha + ")", 2, 10);
     ctx.beginPath();
     ctx.moveTo(W * 0.28, H * 0.72);
     ctx.lineTo(aimX, aimY);
@@ -1755,6 +1903,17 @@
         drawBarricade(barricades[i]);
       }
       drawTowers();
+      if (pursuitTie && pursuitTie.alive) {
+        drawWireEdges(
+          TIE_EDGES,
+          pursuitTie.x,
+          pursuitTie.y,
+          pursuitTie.z,
+          0.55,
+          WIRE_GREEN,
+          8
+        );
+      }
     }
 
     drawBolts();
@@ -1778,6 +1937,9 @@
     if (laserFlash > 0) {
       laserFlash -= dt;
     }
+    if (torpedoFlash > 0) {
+      torpedoFlash -= dt;
+    }
     if (hitFlash > 0) {
       hitFlash -= dt;
     }
@@ -1790,6 +1952,10 @@
     }
 
     updateFlightControl();
+    if (fireQueued) {
+      fireQueued = false;
+      fireLaser();
+    }
     updateParticles();
     updateStarbursts();
     updateDebris();
@@ -1935,7 +2101,7 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL WARS";
     instructionsEl.textContent =
-      "Inspired by the 1983 arcade classic — but smoother, sharper, and playable with a mouse. Survive the dogfight, blast towers on the surface, weave through trench barricades, and hit the exhaust port. Shoot enemy fireballs for bonus points.";
+      "Mouse aims the crosshair. WASD / arrows dodge fireballs. Click or Space fires blasters — at the exhaust port that becomes a proton torpedo. Survive TIEs, clear surface towers, weave barricades, then hit the port.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -2198,7 +2364,7 @@
   function resetMission(waveNum) {
     stage = STAGE_BATTLE;
     ties = [];
-    bolts = [];
+    clearBolts();
     tiesKilled = 0;
     tiesRequired = 10 + waveNum * 3;
     tieSpawnAcc = 0;
@@ -2214,7 +2380,7 @@
     barricadeAcc = 0;
     starbursts = [];
     shipBank = 0;
-    hudHint = "";
+    hudHint = "MOUSE AIM — WASD DODGE";
     battleTimer = 0;
     battleDuration = 38 + waveNum * 4;
     debris = [];
@@ -2226,6 +2392,10 @@
     towerSpawnAcc = 0;
     exhaustVisible = false;
     exhaustHit = false;
+    pursuitTie = null;
+    pursuitSpawned = false;
+    fireQueued = false;
+    torpedoFlash = 0;
     explodeTimer = 0;
     killFlash = [];
     particles = [];
@@ -2238,6 +2408,9 @@
     mouseTargetY = CY;
     shipX = 0;
     shipY = 0;
+    dodgeX = 0;
+    dodgeY = 0;
+    trenchSpeed = 2.8 + waveNum * 0.25;
     initStars();
   }
 
@@ -2309,7 +2482,8 @@
     running = false;
     ties = [];
     towers = [];
-    bolts = [];
+    clearBolts();
+    pursuitTie = null;
     showMessages([]);
     showMenuOverlay();
     SLArcade.endSession().catch(function () {});
