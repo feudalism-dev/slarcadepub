@@ -86,6 +86,8 @@
   var lastLeaderboardData = null;
 
   var stage = STAGE_BATTLE;
+  var MAX_SHIELD = 6;
+  var shieldSegments = 6;
   var shield = 100;
   var aimX = CX;
   var aimY = CY;
@@ -149,6 +151,12 @@
   var barricades = [];
   var barricadeAcc = 0;
   var trenchProgress = 0;
+  var battleTimer = 0;
+  var battleDuration = 42;
+  var debris = [];
+  var trenchShotsFired = 0;
+  var surfaceHazards = [];
+  var exhaustMissHandled = false;
 
   function setGameActive(active) {
     gameWrap.classList.toggle("game-active", !!active);
@@ -382,6 +390,74 @@
     ctx.shadowBlur = 0;
   }
 
+  function fillPoly2D(pts, fill, stroke, width, glow) {
+    if (pts.length < 3) {
+      return;
+    }
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    var i;
+    for (i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
+    }
+    ctx.closePath();
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    if (stroke) {
+      strokeGlow(stroke, width || 1, glow || 4);
+      ctx.stroke();
+      clearGlow();
+    }
+  }
+
+  function spawnDebris(wx, wy, wz, scale, color) {
+    var i;
+    for (i = 0; i < 8; i++) {
+      debris.push({
+        x: wx + (Math.random() - 0.5) * 20,
+        y: wy + (Math.random() - 0.5) * 20,
+        z: wz + (Math.random() - 0.5) * 20,
+        vx: (Math.random() - 0.5) * 3,
+        vy: (Math.random() - 0.5) * 3,
+        vz: -2 - Math.random() * 4,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() - 0.5) * 0.2,
+        scale: scale * (0.25 + Math.random() * 0.35),
+        life: 0.9 + Math.random() * 0.5,
+        maxLife: 1.4,
+        color: color || WIRE_GREEN,
+      });
+    }
+  }
+
+  function updateDebris() {
+    var i;
+    var spd = dt * 60;
+    for (i = debris.length - 1; i >= 0; i--) {
+      var d = debris[i];
+      d.life -= dt;
+      if (d.life <= 0) {
+        debris.splice(i, 1);
+        continue;
+      }
+      d.x += d.vx * spd;
+      d.y += d.vy * spd;
+      d.z += d.vz * spd;
+      d.rot += d.vr * spd;
+    }
+  }
+
+  function drawDebris() {
+    var i;
+    for (i = 0; i < debris.length; i++) {
+      var d = debris[i];
+      var a = d.life / d.maxLife;
+      drawWireEdges(TIE_EDGES, d.x, d.y, d.z, d.scale * a, d.color, 6 * a);
+    }
+  }
+
   function drawLine3D(x1, y1, z1, x2, y2, z2, color, width, glow) {
     var a = project(x1, y1, z1);
     var b = project(x2, y2, z2);
@@ -483,6 +559,18 @@
 
   function drawDeathStar(z, color) {
     var r = 130;
+    var center = project(0, 0, z);
+    if (center && center.z > 1) {
+      var rad = r * center.scale;
+      var grd = ctx.createRadialGradient(center.x, center.y, rad * 0.1, center.x, center.y, rad);
+      grd.addColorStop(0, "rgba(30, 50, 30, 0.85)");
+      grd.addColorStop(0.7, "rgba(12, 28, 12, 0.55)");
+      grd.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
     var segs = 14;
     var i;
     var j;
@@ -524,7 +612,13 @@
       scale: 1,
       pattern: pattern,
       phase: Math.random() * Math.PI * 2,
+      isVader: false,
     };
+    if (Math.random() < 0.07 + wave * 0.012) {
+      t.isVader = true;
+      t.scale = 1.2;
+      t.speed = 3.2 + wave * 0.25;
+    }
     if (pattern === 1) {
       t.x = (Math.random() < 0.5 ? -1 : 1) * (280 + Math.random() * 120);
       t.vx = -t.x * 0.002;
@@ -633,6 +727,10 @@
     var hh = (tw.h + 30) * p.scale;
     var x = p.x;
     var y = p.y;
+    ctx.fillStyle = "rgba(180, 150, 40, 0.35)";
+    ctx.fillRect(x - hw, y - hh, hw * 2, hh);
+    ctx.fillStyle = "rgba(80, 70, 20, 0.5)";
+    ctx.fillRect(x - hw * 0.55, y - hh, hw * 1.1, hh * 0.35);
     strokeGlow(WIRE_YELLOW, 2, 10);
     ctx.strokeRect(x - hw, y - hh, hw * 2, hh);
     ctx.beginPath();
@@ -686,6 +784,8 @@
     }
     var w = 90 * p.scale;
     var h = 50 * p.scale;
+    ctx.fillStyle = b.color === WIRE_PINK ? "rgba(255,120,200,0.22)" : b.color === WIRE_YELLOW ? "rgba(255,200,60,0.2)" : "rgba(80,220,255,0.18)";
+    ctx.fillRect(p.x - w, p.y - h, w * 2, h * 2);
     strokeGlow(b.color, 2, 10);
     ctx.strokeRect(p.x - w, p.y - h, w * 2, h * 2);
     clearGlow();
@@ -701,7 +801,7 @@
     ctx.font = "bold 13px Consolas, monospace";
     ctx.textAlign = "center";
     ctx.fillText("SHIELD", CX, 16);
-    var segs = Math.ceil(shield / 17);
+    var segs = shieldSegments;
     if (segs <= 0) {
       ctx.fillStyle = WIRE_RED;
       ctx.fillText("SHIELD GONE", CX, 34);
@@ -718,7 +818,7 @@
       ctx.stroke();
       clearGlow();
       var i;
-      for (i = 0; i < 8; i++) {
+      for (i = 0; i < MAX_SHIELD; i++) {
         var sx = CX - 42 + i * 12;
         ctx.fillStyle = i < segs ? WIRE_YELLOW : WIRE_DIM;
         ctx.fillRect(sx, 44, 8, 6);
@@ -732,7 +832,11 @@
       ctx.fillStyle = WIRE_RED;
       ctx.fillText("TOWERS " + towersRemaining, W - 14, 36);
     } else if (stage === STAGE_BATTLE) {
-      ctx.fillText("FIGHTERS " + Math.max(0, tiesRequired - tiesKilled), W - 14, 36);
+      var left = Math.max(0, Math.ceil(battleDuration - battleTimer));
+      ctx.fillText("TIME " + left, W - 14, 36);
+    } else if (stage === STAGE_TRENCH && exhaustVisible) {
+      ctx.fillStyle = WIRE_RED;
+      ctx.fillText("EXHAUST PORT", W - 14, 36);
     }
 
     ctx.textAlign = "center";
@@ -760,6 +864,26 @@
     laserFlash = 0.12;
     playLaserSound();
 
+    var bi;
+    for (bi = bolts.length - 1; bi >= 0; bi--) {
+      var bolt = bolts[bi];
+      var bdx = bolt.sx - aimX;
+      var bdy = bolt.sy - aimY;
+      if (bdx * bdx + bdy * bdy < 625) {
+        bolts.splice(bi, 1);
+        score += 50 + wave * 5;
+        spawnStarburst(bolt.sx, bolt.sy, 14);
+        spawnFloatText(bolt.sx, bolt.sy - 12, "+50", WIRE_CYAN);
+        playKillSound();
+        updateHud();
+        return;
+      }
+    }
+
+    if (stage === STAGE_TRENCH) {
+      trenchShotsFired++;
+    }
+
     if (stage === STAGE_BATTLE) {
       var best = null;
       var bestZ = 99999;
@@ -784,14 +908,15 @@
       if (best) {
         best.alive = false;
         tiesKilled++;
-        var pts = 100 + wave * 15;
+        var pts = best.isVader ? 2000 + wave * 200 : 100 + wave * 15;
         score += pts;
         hitFlash = 0.15;
         var tp = tieScreenPos(best);
         spawnStarburst(tp ? tp.x : aimX, tp ? tp.y : aimY, 28 + (tp ? tp.scale * 20 : 0));
-        spawnFloatText(aimX, aimY - 20, "+" + pts, WIRE_YELLOW);
+        spawnDebris(best.x, best.y, best.z, best.scale, best.isVader ? WIRE_CYAN : WIRE_GREEN);
+        spawnFloatText(aimX, aimY - 20, best.isVader ? "VADER +" + pts : "+" + pts, best.isVader ? WIRE_CYAN : WIRE_YELLOW);
         playKillSound();
-        addShake(3);
+        addShake(best.isVader ? 8 : 3);
         checkLifeBonuses();
         updateHud();
       }
@@ -821,6 +946,7 @@
           score += gt.points;
           hitFlash = 0.15;
           spawnStarburst(gp.x, gp.y - gw, 32);
+          spawnDebris(gt.x, gt.h * 0.5, gt.z, 0.8, WIRE_YELLOW);
           spawnFloatText(gp.x, gp.y - 30, "+" + gt.points, WIRE_YELLOW);
           hudHint = gt.points >= 800 ? "800 POINTS NEXT TOWER" : "200 POINTS NEXT TOWER";
           playKillSound();
@@ -862,9 +988,15 @@
           var edy = ex.y - aimY;
           if (edx * edx + edy * edy < 350) {
             exhaustHit = true;
-            score += 5000 + wave * 500;
+            var basePts = 5000 + wave * 500;
+            score += basePts;
+            if (trenchShotsFired <= 1) {
+              score += 10000;
+              spawnFloatText(aimX, aimY - 50, "USE THE FORCE!", WIRE_CYAN);
+            }
             hitFlash = 0.5;
             spawnParticles(aimX, aimY, WIRE_RED, 40, 8);
+            spawnStarburst(ex.x, ex.y, 40);
             spawnFloatText(aimX, aimY - 30, "BULLSEYE!", WIRE_RED);
             playExplosionSound();
             addShake(14);
@@ -914,13 +1046,15 @@
     if (playerInvuln > 0) {
       return;
     }
-    shield -= amount;
+    shieldSegments--;
+    shield = (shieldSegments / MAX_SHIELD) * 100;
     hitFlash = 0.2;
     playerInvuln = 1.2;
     playHitSound();
     addShake(6);
     spawnParticles(aimX, aimY, WIRE_RED, 8, 5);
-    if (shield <= 0) {
+    if (shieldSegments <= 0) {
+      shieldSegments = MAX_SHIELD;
       shield = 100;
       lives--;
       updateHud();
@@ -972,9 +1106,10 @@
   }
 
   function updateBattle() {
+    battleTimer += dt;
     tieSpawnAcc += dt;
     var spawnInterval = Math.max(0.35, 0.85 - wave * 0.04);
-    if (tieSpawnAcc >= spawnInterval && tiesKilled + aliveTies() < tiesRequired + 5) {
+    if (tieSpawnAcc >= spawnInterval && aliveTies() < 8 + wave) {
       tieSpawnAcc = 0;
       spawnTie();
     }
@@ -1012,8 +1147,13 @@
 
     updateBolts();
 
-    if (tiesKilled >= tiesRequired && aliveTies() === 0) {
-      beginSurface();
+    if (battleTimer >= battleDuration) {
+      if (wave <= 1) {
+        beginTrench();
+        hudHint = "WAVE 1 — STRAIGHT TO THE TRENCH!";
+      } else {
+        beginSurface();
+      }
     }
   }
 
@@ -1028,6 +1168,14 @@
     return n;
   }
 
+  function spawnSurfaceHazard() {
+    surfaceHazards.push({
+      x: (Math.random() - 0.5) * 500,
+      z: 700 + Math.random() * 400,
+      alive: true,
+    });
+  }
+
   function beginSurface() {
     stage = STAGE_SURFACE;
     approachTimer = 0;
@@ -1035,6 +1183,7 @@
     surfaceKilled = 0;
     surfaceTowers = [];
     surfaceTowerAcc = 0;
+    surfaceHazards = [];
     bolts = [];
     ties = [];
     deathStarZ = 2400;
@@ -1043,6 +1192,9 @@
     var i;
     for (i = 0; i < 5; i++) {
       spawnSurfaceTower();
+    }
+    for (i = 0; i < 4; i++) {
+      spawnSurfaceHazard();
     }
   }
 
@@ -1059,9 +1211,34 @@
         spawnSurfaceTower();
       }
     }
+    if (Math.random() < 0.02 * dt * 60) {
+      spawnSurfaceHazard();
+    }
 
     var i;
     var spd = dt * 60;
+    for (i = surfaceHazards.length - 1; i >= 0; i--) {
+      var hz = surfaceHazards[i];
+      if (!hz.alive) {
+        surfaceHazards.splice(i, 1);
+        continue;
+      }
+      hz.z -= (5 + wave * 0.3) * spd;
+      if (hz.z < 80) {
+        var hp = projectGround(hz.x, 0, hz.z);
+        if (hp) {
+          var hdx = hp.x - aimX;
+          var hdy = hp.y - aimY;
+          if (hdx * hdx + hdy * hdy < 900) {
+            damagePlayer(1);
+          }
+        }
+      }
+      if (hz.z < 10) {
+        hz.alive = false;
+      }
+    }
+
     for (i = surfaceTowers.length - 1; i >= 0; i--) {
       var gt = surfaceTowers[i];
       if (!gt.alive) {
@@ -1101,7 +1278,23 @@
     bolts = [];
     barricades = [];
     barricadeAcc = 0;
+    trenchShotsFired = 0;
+    exhaustMissHandled = false;
     hudHint = "FLY OVER / UNDER BARRICADES";
+  }
+
+  function retryTrench() {
+    trenchProgress = 0;
+    towers = [];
+    towerSpawnAcc = 0;
+    exhaustVisible = false;
+    exhaustHit = false;
+    exhaustMissHandled = false;
+    bolts = [];
+    barricades = [];
+    barricadeAcc = 0;
+    trenchShotsFired = 0;
+    hudHint = "MISSED PORT — RETRY TRENCH";
   }
 
   function spawnTower() {
@@ -1180,16 +1373,18 @@
 
     updateBolts();
 
-    if (trenchProgress > 480) {
-      exhaustVisible = true;
+    if (trenchProgress > 560 && exhaustVisible && !exhaustHit && !exhaustMissHandled) {
+      exhaustMissHandled = true;
+      damagePlayer(1);
+      retryTrench();
+      return;
     }
 
-    if (shield > 0 && shield < 100) {
-      shield += dt * 4;
-      if (shield > 100) {
-        shield = 100;
+    if (trenchProgress > 480) {
+      exhaustVisible = true;
+      if (!hudHint || hudHint.indexOf("MISSED") === 0) {
+        hudHint = "FIRE PROTON TORPEDO AT EXHAUST PORT";
       }
-      updateHud();
     }
   }
 
@@ -1267,14 +1462,30 @@
   }
 
   function drawTie(t) {
-    var col = t.alive ? WIRE_GREEN : WIRE_DIM;
-    drawWireEdges(TIE_EDGES, t.x, t.y, t.z, t.scale, col, 8);
+    var col = WIRE_DIM;
+    if (t.alive) {
+      col = t.isVader ? WIRE_CYAN : WIRE_GREEN;
+    }
+    if (t.alive && t.z < 900) {
+      var p = tieScreenPos(t);
+      if (p) {
+        var rad = (t.isVader ? 28 : 22) * p.scale;
+        ctx.fillStyle = t.isVader ? "rgba(80,180,255,0.12)" : "rgba(60,255,80,0.1)";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    drawWireEdges(TIE_EDGES, t.x, t.y, t.z, t.scale, col, t.isVader ? 12 : 8);
   }
 
   function drawSurfaceScene() {
     drawDeathStar(deathStarZ, WIRE_DIM);
     drawGroundGrid();
     var i;
+    for (i = 0; i < surfaceHazards.length; i++) {
+      drawGroundHazard(surfaceHazards[i]);
+    }
     for (i = 0; i < surfaceTowers.length; i++) {
       drawGroundTower(surfaceTowers[i]);
     }
@@ -1302,6 +1513,14 @@
     var vanY = CY - 50;
     var half = 300 - prog * 0.12;
     var cx = CX + shipX * 0.4;
+
+    var floorPts = [
+      { x: 0, y: H },
+      { x: cx - half * 0.38, y: vanY },
+      { x: cx + half * 0.38, y: vanY },
+      { x: W, y: H },
+    ];
+    fillPoly2D(floorPts, "rgba(8, 24, 8, 0.55)", null);
 
     strokeGlow(WIRE_GREEN, 2, 8);
     ctx.beginPath();
@@ -1343,6 +1562,10 @@
       var ex = project(shipX, shipY - 30, 120);
       if (ex) {
         var r = 16 + Math.sin(gameTime * 15) * 4;
+        ctx.fillStyle = "rgba(255, 60, 40, 0.35)";
+        ctx.beginPath();
+        ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2);
+        ctx.fill();
         strokeGlow(WIRE_RED, 2, 12);
         ctx.beginPath();
         ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2);
@@ -1366,6 +1589,10 @@
     for (i = 0; i < bolts.length; i++) {
       var b = bolts[i];
       var col = b.mag ? WIRE_MAGENTA : WIRE_RED;
+      ctx.fillStyle = b.mag ? "rgba(255,100,255,0.45)" : "rgba(255,80,60,0.4)";
+      ctx.beginPath();
+      ctx.arc(b.sx, b.sy, b.mag ? 7 : 5, 0, Math.PI * 2);
+      ctx.fill();
       strokeGlow(col, 2, 12);
       if (b.mag) {
         var j;
@@ -1529,6 +1756,7 @@
     }
 
     drawBolts();
+    drawDebris();
     drawCockpit();
     drawCrosshair();
     drawLaserBeam();
@@ -1562,6 +1790,7 @@
     updateFlightControl();
     updateParticles();
     updateStarbursts();
+    updateDebris();
 
     if (stage === STAGE_BATTLE) {
       updateBattle();
@@ -1704,7 +1933,7 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL WARS";
     instructionsEl.textContent =
-      "Modern smooth controls with a retro vector cabinet look. Mouse = yoke. Click / Space = fire. Auto-thrust in the trench — no throttle needed.";
+      "Inspired by the 1983 arcade classic — but smoother, sharper, and playable with a mouse. Survive the dogfight, blast towers on the surface, weave through trench barricades, and hit the exhaust port. Shoot enemy fireballs for bonus points.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -1732,6 +1961,10 @@
   }
 
   function showMissionComplete() {
+    if (shieldSegments < MAX_SHIELD) {
+      shieldSegments++;
+      shield = (shieldSegments / MAX_SHIELD) * 100;
+    }
     phase = PHASE_LEVEL;
     running = false;
     setGameActive(false);
@@ -1971,6 +2204,12 @@
     starbursts = [];
     shipBank = 0;
     hudHint = "";
+    battleTimer = 0;
+    battleDuration = 38 + waveNum * 4;
+    debris = [];
+    trenchShotsFired = 0;
+    exhaustMissHandled = false;
+    surfaceHazards = [];
     trenchProgress = 0;
     towers = [];
     towerSpawnAcc = 0;
@@ -1980,6 +2219,7 @@
     killFlash = [];
     particles = [];
     floatTexts = [];
+    shieldSegments = MAX_SHIELD;
     shield = 100;
     aimX = CX;
     aimY = CY;
@@ -2027,7 +2267,7 @@
     resetMission(wave);
     startMissionAfterReady(
       "GET READY!",
-      "Wave 1 — clear TIE fighters, then attack the Death Star surface!"
+      "Wave 1 — survive the TIE attack, then dive straight into the trench!"
     );
   }
 
@@ -2036,7 +2276,7 @@
     resetMission(wave);
     startMissionAfterReady(
       "GET READY!",
-      "Wave " + wave + " — tighter trench, faster fighters!"
+      "Wave " + wave + " — surface towers, then the trench. Good luck, Red Five!"
     );
   }
 
