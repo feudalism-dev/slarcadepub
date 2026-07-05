@@ -32,15 +32,17 @@
   var ROWS = 31;
   var TUNNEL_ROW = 14;
   var TUNNEL_LEFT_COL = 6;
-  var TUNNEL_RIGHT_COL = 22;
-  var PEN_ROW_TOP = 11;
-  var PEN_ROW_MID = 14;
+  var TUNNEL_RIGHT_COL = 21;
+  var PEN_ROW_TOP = 12;
+  var PEN_ROW_MID = 15;
   var PEN_ROW_BOT = 17;
+  var PEN_GATE_ROW = 10;
+  var PEN_EXIT_ROW = 9;
   var PEN_COL_LEFT = 10;
   var PEN_COL_RIGHT = 17;
   var PEN_DOOR_COL = 13;
   var PLAYER_START_COL = 13;
-  var PLAYER_START_ROW = 26;
+  var PLAYER_START_ROW = 23;
   var GHOST_RELEASE_BASE_MS = 4000;
   var GHOST_RELEASE_STAGGER_MS = 2000;
   var BOTTOM_PAD = 4;
@@ -61,6 +63,11 @@
   var GHOST_PIXELS_PER_SEC = 55;
   var FRIGHTENED_PIXELS_PER_SEC = 40;
   var EATEN_GHOST_PIXELS_PER_SEC = 120;
+  var WALL_COLOR = "#2121ff";
+  var WALL_LINE = Math.max(1, Math.round(TILE * 0.14));
+  var GATE_COLOR = "#ffb8ff";
+  var PELLET_COLOR = "#ffb8ae";
+  var READY_MS = 2000;
 
   var DIR_NONE = 0;
   var DIR_UP = 1;
@@ -93,6 +100,7 @@
   ];
 
   var READY_FRAMES = 120;
+  var readyMs = 0;
   var STARTING_LIVES = 3;
   var CONTINUE_TIMEOUT_MS = 30000;
   var FRIGHTENED_MS = 6000;
@@ -111,7 +119,7 @@
     "#.####.##.########.##.####.#",
     "#......##....##....##......#",
     "######.##### ## #####.######",
-    "     #.##### ## #####.#     ",
+    "     #.##### -- #####.#     ",
     "     #.##    G    ##.#      ",
     "     #.## ######## ##.#     ",
     "######.## #      # ##.######",
@@ -142,6 +150,12 @@
   ];
 
   var GHOST_COLORS = ["#f44", "#ffb8de", "#0ff", "#ffb852"];
+  var GHOST_PEN_SLOTS = [
+    { c: 13, r: 15 },
+    { c: 11, r: 15 },
+    { c: 15, r: 15 },
+    { c: 13, r: 16 },
+  ];
   var GHOST_NAMES = ["Crimson", "Rose", "Azure", "Amber"];
 
   var keys = {};
@@ -197,6 +211,10 @@
     return t !== "#" && t !== " ";
   }
 
+  function isGateTile(t) {
+    return t === "-";
+  }
+
   function canWalkOn(grid, c, r, isPlayer) {
     if (r === TUNNEL_ROW && (c < 0 || c >= COLS)) {
       return true;
@@ -208,7 +226,7 @@
     if (!isWalkableTile(t)) {
       return false;
     }
-    if (isPlayer && (t === "G" || isPenInterior(c, r))) {
+    if (isPlayer && (t === "G" || isGateTile(t) || isPenInterior(c, r))) {
       return false;
     }
     return true;
@@ -380,14 +398,14 @@
   }
 
   function playerSpeed() {
-    return (PLAYER_PIXELS_PER_SEC + level * 1.5) / 1000;
+    return PLAYER_PIXELS_PER_SEC / 1000;
   }
 
   function ghostSpeed(frightened) {
     if (frightened) {
-      return (FRIGHTENED_PIXELS_PER_SEC + level * 0.5) / 1000;
+      return FRIGHTENED_PIXELS_PER_SEC / 1000;
     }
-    return (GHOST_PIXELS_PER_SEC + level * 1) / 1000;
+    return GHOST_PIXELS_PER_SEC / 1000;
   }
 
   function eatenGhostSpeed() {
@@ -400,10 +418,10 @@
     dotsLeft = countDots();
     player = findStart(PLAYER_START_COL, PLAYER_START_ROW, DIR_LEFT);
     ghosts = [
-      makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, 0, true),
-      makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, 1, true),
-      makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, 2, true),
-      makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, 3, true),
+      makeGhost(GHOST_PEN_SLOTS[0].c, GHOST_PEN_SLOTS[0].r, DIR_UP, 0, true),
+      makeGhost(GHOST_PEN_SLOTS[1].c, GHOST_PEN_SLOTS[1].r, DIR_UP, 1, true),
+      makeGhost(GHOST_PEN_SLOTS[2].c, GHOST_PEN_SLOTS[2].r, DIR_UP, 2, true),
+      makeGhost(GHOST_PEN_SLOTS[3].c, GHOST_PEN_SLOTS[3].r, DIR_UP, 3, true),
     ];
     ghostMode = MODE_SCATTER;
     modeScheduleIndex = 0;
@@ -418,12 +436,12 @@
       c: c,
       r: r,
       x: p.x,
-      y: p.y + idx * 3,
+      y: p.y,
       dir: dir,
       idx: idx,
       inPen: inPen,
-      exiting: false,
-      releaseTimer: GHOST_RELEASE_BASE_MS + idx * GHOST_RELEASE_STAGGER_MS,
+      exiting: idx === 0,
+      releaseTimer: idx === 0 ? 0 : GHOST_RELEASE_BASE_MS + (idx - 1) * GHOST_RELEASE_STAGGER_MS,
       eaten: false,
       speed: ghostSpeed(false),
     };
@@ -465,7 +483,7 @@
         }
         continue;
       }
-      if (!allowPen && (isPenInterior(nc, nr) || maze[nr][nc] === "G")) {
+      if (!allowPen && (isPenInterior(nc, nr) || maze[nr][nc] === "G" || isGateTile(maze[nr][nc]))) {
         continue;
       }
       if (canWalk(nc, nr)) {
@@ -822,10 +840,10 @@
           g.inPen = true;
           g.exiting = false;
           g.releaseTimer = GHOST_RELEASE_BASE_MS;
-          g.c = PEN_DOOR_COL;
-          g.r = PEN_ROW_MID;
+          var home = GHOST_PEN_SLOTS[g.idx];
+          g.c = home.c;
+          g.r = home.r;
           snapToCenter(g);
-          g.y += g.idx * 3;
           g.speed = ghostSpeed(false);
         }
         continue;
@@ -833,10 +851,11 @@
       if (g.inPen && !g.exiting) {
         g.releaseTimer -= elapsedMs;
         g.dir = DIR_NONE;
-        g.c = PEN_DOOR_COL;
-        g.r = PEN_ROW_MID;
+        var slot = GHOST_PEN_SLOTS[g.idx];
+        g.c = slot.c;
+        g.r = slot.r;
         snapToCenter(g);
-        g.y += Math.sin(frame * 0.1 + g.idx * 1.7) * 0.35 + g.idx * 3;
+        g.y += Math.sin(frame * 0.1 + g.idx * 1.7) * (TILE * 0.04);
         if (g.releaseTimer <= 0) {
           g.exiting = true;
           g.dir = DIR_UP;
@@ -847,7 +866,7 @@
       if (g.inPen && g.exiting) {
         g.c = PEN_DOOR_COL;
         moveActor(g, false, elapsedMs);
-        if (g.r <= PEN_ROW_TOP - 1) {
+        if (g.r <= PEN_EXIT_ROW) {
           g.inPen = false;
           g.exiting = false;
         }
@@ -923,7 +942,13 @@
     player = findStart(PLAYER_START_COL, PLAYER_START_ROW, DIR_LEFT);
     var i;
     for (i = 0; i < ghosts.length; i++) {
-      ghosts[i] = makeGhost(PEN_DOOR_COL, PEN_ROW_MID, DIR_UP, i, true);
+      ghosts[i] = makeGhost(
+        GHOST_PEN_SLOTS[i].c,
+        GHOST_PEN_SLOTS[i].r,
+        DIR_UP,
+        i,
+        true
+      );
     }
     frightenedMs = 0;
     ghostMode = MODE_SCATTER;
@@ -962,8 +987,8 @@
 
   function update(elapsedMs) {
     if (phase === PHASE_READY) {
-      readyTimer--;
-      if (readyTimer <= 0) {
+      readyMs -= elapsedMs;
+      if (readyMs <= 0) {
         phase = PHASE_PLAYING;
         running = true;
         overlay.classList.add("hidden");
@@ -976,52 +1001,136 @@
     }
   }
 
-  function drawGhostHouse() {
-    var x = OFF_X + PEN_COL_LEFT * TILE;
-    var y = OFF_Y + PEN_ROW_TOP * TILE;
-    var w = (PEN_COL_RIGHT - PEN_COL_LEFT + 1) * TILE;
-    var h = (PEN_ROW_BOT - PEN_ROW_TOP + 1) * TILE;
-    ctx.fillStyle = "#1a0820";
-    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
-    ctx.strokeStyle = "#ff9ad0";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+  function isWallTile(t) {
+    return t === "#";
+  }
+
+  function wallAt(c, r) {
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
+      return true;
+    }
+    return isWallTile(maze[r][c]);
+  }
+
+  function drawMazeWalls() {
+    var r;
+    var c;
+    var inset = WALL_LINE * 0.5;
+    ctx.strokeStyle = WALL_COLOR;
+    ctx.lineWidth = WALL_LINE;
+    ctx.lineCap = "square";
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        if (!isWallTile(maze[r][c])) {
+          continue;
+        }
+        var x = OFF_X + c * TILE;
+        var y = OFF_Y + r * TILE;
+        if (!wallAt(c, r - 1)) {
+          ctx.beginPath();
+          ctx.moveTo(x, y + inset);
+          ctx.lineTo(x + TILE, y + inset);
+          ctx.stroke();
+        }
+        if (!wallAt(c, r + 1)) {
+          ctx.beginPath();
+          ctx.moveTo(x, y + TILE - inset);
+          ctx.lineTo(x + TILE, y + TILE - inset);
+          ctx.stroke();
+        }
+        if (!wallAt(c - 1, r)) {
+          ctx.beginPath();
+          ctx.moveTo(x + inset, y);
+          ctx.lineTo(x + inset, y + TILE);
+          ctx.stroke();
+        }
+        if (!wallAt(c + 1, r)) {
+          ctx.beginPath();
+          ctx.moveTo(x + TILE - inset, y);
+          ctx.lineTo(x + TILE - inset, y + TILE);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  function drawGhostGate() {
+    var r;
+    var c;
+    ctx.strokeStyle = GATE_COLOR;
+    ctx.lineWidth = Math.max(1, Math.round(TILE * 0.1));
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        if (!isGateTile(maze[r][c])) {
+          continue;
+        }
+        var x = OFF_X + c * TILE;
+        var y = OFF_Y + r * TILE + TILE * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 2, y);
+        ctx.lineTo(x + TILE - 2, y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawPellets() {
+    var r;
+    var c;
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        var t = maze[r][c];
+        var x = OFF_X + c * TILE;
+        var y = OFF_Y + r * TILE;
+        if (t === ".") {
+          var dot = Math.max(2, Math.round(TILE * 0.12));
+          ctx.fillStyle = PELLET_COLOR;
+          ctx.fillRect(
+            x + Math.floor(TILE * 0.5) - Math.floor(dot * 0.5),
+            y + Math.floor(TILE * 0.5) - Math.floor(dot * 0.5),
+            dot,
+            dot
+          );
+        } else if (t === "o") {
+          ctx.fillStyle = PELLET_COLOR;
+          ctx.beginPath();
+          ctx.arc(
+            x + TILE * 0.5,
+            y + TILE * 0.5,
+            Math.max(3, TILE * 0.18),
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  function drawGhostHouseFloor() {
+    var r;
+    var c;
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        if (maze[r][c] !== "G") {
+          continue;
+        }
+        var x = OFF_X + c * TILE;
+        var y = OFF_Y + r * TILE;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2);
+      }
+    }
   }
 
   function drawMaze() {
     if (!maze.length) {
       return;
     }
-    drawGhostHouse();
-    var r;
-    var c;
-    for (r = 0; r < ROWS; r++) {
-      for (c = 0; c < COLS; c++) {
-        var x = OFF_X + c * TILE;
-        var y = OFF_Y + r * TILE;
-        var t = maze[r][c];
-        if (t === "#") {
-          ctx.fillStyle = "#2244cc";
-          ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2);
-          ctx.strokeStyle = "#6699ff";
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4);
-        } else if (t === "G") {
-          ctx.fillStyle = "#1a0820";
-          ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2);
-        } else if (t === ".") {
-          ctx.fillStyle = "#ffb897";
-          ctx.beginPath();
-          ctx.arc(x + TILE * 0.5, y + TILE * 0.5, Math.max(2, TILE * 0.08), 0, Math.PI * 2);
-          ctx.fill();
-        } else if (t === "o") {
-          ctx.fillStyle = "#ffb897";
-          ctx.beginPath();
-          ctx.arc(x + TILE * 0.5, y + TILE * 0.5, Math.max(4, TILE * 0.18), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
+    drawGhostHouseFloor();
+    drawPellets();
+    drawMazeWalls();
+    drawGhostGate();
   }
 
   function drawPlayer() {
@@ -1092,9 +1201,14 @@
       drawGhosts();
       drawPlayer();
     }
-    if (phase === PHASE_READY && readyTimer > 0) {
+    if (phase === PHASE_READY && readyMs > 0) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
       ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#ffe066";
+      ctx.font = "bold " + Math.max(12, Math.round(TILE * 0.9)) + "px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("READY!", OFF_X + MAZE_W * 0.5, OFF_Y + TILE * (PEN_ROW_MID + 0.5));
+      ctx.textAlign = "left";
     }
   }
 
@@ -1137,7 +1251,7 @@
   function beginReadyCountdown(titleText, hintText) {
     phase = PHASE_READY;
     running = false;
-    readyTimer = READY_FRAMES;
+    readyMs = READY_MS;
     overlay.classList.remove("hidden");
     overlayTitle.textContent = titleText || "GET READY!";
     instructionsEl.textContent = hintText || "Ghosts leave the pen one by one…";
