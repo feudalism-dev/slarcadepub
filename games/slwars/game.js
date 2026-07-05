@@ -56,35 +56,52 @@
   var scrollSpeed = 18;
   var turrets = [];
   var ties = [];
+  var stars = [];
   var gridScroll = 0;
+  var dogfightTime = 0;
+
+  /** Mouse aim (screen space) and smoothed camera lean (opposite drift). */
+  var mouseX = CX;
+  var mouseY = CY;
+  var aimX = CX;
+  var aimY = CY;
+  var leanX = 0;
+  var leanY = 0;
+
+  /** Dogfight allows z down to this so fighters can fly past / over the camera. */
+  var Z_FLY = 0.25;
 
   /**
-   * Project world (x, y, z) → screen. Returns null if outside draw band.
+   * Project world (x, y, z) → screen.
+   * minZ defaults to Z_NEAR; dogfight uses Z_FLY so ships can pass the camera.
+   * Camera lean is applied so the world drifts opposite the mouse.
    */
-  function project(x, y, z) {
-    if (z < Z_NEAR || z > Z_FAR) {
+  function project(x, y, z, minZ) {
+    var zMin = minZ === undefined ? Z_NEAR : minZ;
+    if (z < zMin || z > Z_FAR) {
       return null;
     }
     return {
-      x: (x / z) * PERSPECTIVE + CX,
-      y: (y / z) * PERSPECTIVE + CY,
+      x: (x / z) * PERSPECTIVE + CX + leanX,
+      y: (y / z) * PERSPECTIVE + CY + leanY,
       z: z,
       scale: PERSPECTIVE / z,
     };
   }
 
   /** Draw a world-space line segment if either end is visible. */
-  function drawLine3(x1, y1, z1, x2, y2, z2, color, width) {
-    var a = project(x1, y1, z1);
-    var b = project(x2, y2, z2);
+  function drawLine3(x1, y1, z1, x2, y2, z2, color, width, minZ) {
+    var zMin = minZ === undefined ? Z_NEAR : minZ;
+    var a = project(x1, y1, z1, zMin);
+    var b = project(x2, y2, z2, zMin);
     if (!a && !b) {
       return;
     }
     if (!a) {
-      a = clipToNear(x1, y1, z1, x2, y2, z2);
+      a = clipToNear(x1, y1, z1, x2, y2, z2, zMin);
     }
     if (!b) {
-      b = clipToNear(x2, y2, z2, x1, y1, z1);
+      b = clipToNear(x2, y2, z2, x1, y1, z1, zMin);
     }
     if (!a || !b) {
       return;
@@ -97,22 +114,24 @@
     ctx.stroke();
   }
 
-  /** Simple near-plane clip for a segment that straddles Z_NEAR. */
-  function clipToNear(xOut, yOut, zOut, xIn, yIn, zIn) {
-    if (zIn < Z_NEAR || zIn > Z_FAR) {
+  /** Simple near-plane clip for a segment that straddles the min z plane. */
+  function clipToNear(xOut, yOut, zOut, xIn, yIn, zIn, minZ) {
+    var zMin = minZ === undefined ? Z_NEAR : minZ;
+    if (zIn < zMin || zIn > Z_FAR) {
       return null;
     }
     if (zOut === zIn) {
-      return project(xIn, yIn, zIn);
+      return project(xIn, yIn, zIn, zMin);
     }
-    var t = (Z_NEAR - zOut) / (zIn - zOut);
+    var t = (zMin - zOut) / (zIn - zOut);
     if (t < 0 || t > 1) {
       return null;
     }
     return project(
       xOut + (xIn - xOut) * t,
       yOut + (yIn - yOut) * t,
-      Z_NEAR
+      zMin,
+      zMin
     );
   }
 
@@ -180,21 +199,74 @@
     drawLine3(x, y1, z, x, y1 - h * 0.45, z, COL_GUN, 2);
   }
 
-  /** Minimal TIE: cross + hex wing outline (wireframe). */
+  /**
+   * TIE wireframe. World size is fixed; screen size comes from PERSPECTIVE / z
+   * so z=100 is tiny and z=1 is large. Uses Z_FLY so ships can pass the camera.
+   */
   function drawTie(t) {
     var s = t.s;
     var x = t.x;
     var y = t.y;
     var z = t.z;
     var c = COL_TIE;
-    drawLine3(x - s * 2, y, z, x + s * 2, y, z, c, 1.5);
-    drawLine3(x, y - s, z, x, y + s, z, c, 1.5);
-    drawLine3(x - s * 2, y - s, z, x - s * 2, y + s, z, c, 1);
-    drawLine3(x + s * 2, y - s, z, x + s * 2, y + s, z, c, 1);
-    drawLine3(x - s * 2, y - s, z, x - s * 0.4, y, z, c, 1);
-    drawLine3(x - s * 2, y + s, z, x - s * 0.4, y, z, c, 1);
-    drawLine3(x + s * 2, y - s, z, x + s * 0.4, y, z, c, 1);
-    drawLine3(x + s * 2, y + s, z, x + s * 0.4, y, z, c, 1);
+    var w = z < 8 ? 2 : 1.5;
+    drawLine3(x - s * 2, y, z, x + s * 2, y, z, c, w, Z_FLY);
+    drawLine3(x, y - s, z, x, y + s, z, c, w, Z_FLY);
+    drawLine3(x - s * 2, y - s, z, x - s * 2, y + s, z, c, 1, Z_FLY);
+    drawLine3(x + s * 2, y - s, z, x + s * 2, y + s, z, c, 1, Z_FLY);
+    drawLine3(x - s * 2, y - s, z, x - s * 0.4, y, z, c, 1, Z_FLY);
+    drawLine3(x - s * 2, y + s, z, x - s * 0.4, y, z, c, 1, Z_FLY);
+    drawLine3(x + s * 2, y - s, z, x + s * 0.4, y, z, c, 1, Z_FLY);
+    drawLine3(x + s * 2, y + s, z, x + s * 0.4, y, z, c, 1, Z_FLY);
+    drawLine3(x - s * 0.5, y - s * 0.5, z, x + s * 0.5, y - s * 0.5, z, c, 1, Z_FLY);
+    drawLine3(x + s * 0.5, y - s * 0.5, z, x + s * 0.5, y + s * 0.5, z, c, 1, Z_FLY);
+    drawLine3(x + s * 0.5, y + s * 0.5, z, x - s * 0.5, y + s * 0.5, z, c, 1, Z_FLY);
+    drawLine3(x - s * 0.5, y + s * 0.5, z, x - s * 0.5, y - s * 0.5, z, c, 1, Z_FLY);
+  }
+
+  /** Starfield: points rush from horizon (high z) toward camera (low z). */
+  function initStars() {
+    stars = [];
+    var i;
+    for (i = 0; i < 120; i++) {
+      stars.push({
+        x: (Math.random() - 0.5) * 60,
+        y: (Math.random() - 0.5) * 40,
+        z: Z_NEAR + Math.random() * (Z_FAR - Z_NEAR),
+      });
+    }
+  }
+
+  function updateStars(dt, speed) {
+    var i;
+    for (i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      s.z -= speed * dt * (0.6 + (Z_FAR - s.z) / Z_FAR);
+      if (s.z < Z_FLY) {
+        s.z = Z_FAR - Math.random() * 8;
+        s.x = (Math.random() - 0.5) * 60;
+        s.y = (Math.random() - 0.5) * 40;
+      }
+    }
+  }
+
+  function drawStars() {
+    var i;
+    for (i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      var p = project(s.x, s.y, s.z, Z_FLY);
+      if (!p) {
+        continue;
+      }
+      var bright = 1 - s.z / Z_FAR;
+      var size = 1 + bright * 2;
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(200,255,200," + (0.25 + bright * 0.75) + ")";
+      ctx.lineWidth = size;
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x, p.y + 1 + bright * 4);
+      ctx.stroke();
+    }
   }
 
   function drawTrenchStub() {
@@ -223,13 +295,26 @@
     });
   }
 
+  /**
+   * Spawn a TIE at the horizon on a curved approach path.
+   * baseX/baseY = path center; sine waves weave as z decreases.
+   */
   function spawnTie(z) {
+    var side = Math.random() < 0.5 ? -1 : 1;
     ties.push({
-      x: (Math.random() - 0.5) * 20,
-      y: -2 + (Math.random() - 0.5) * 6,
-      z: z,
-      s: 1.2,
-      vx: (Math.random() - 0.5) * 4,
+      baseX: side * (4 + Math.random() * 14),
+      baseY: -1 + (Math.random() - 0.5) * 5,
+      x: 0,
+      y: 0,
+      z: z === undefined ? Z_FAR : z,
+      s: 1.1 + Math.random() * 0.4,
+      phase: Math.random() * Math.PI * 2,
+      freq: 1.2 + Math.random() * 1.6,
+      ampX: 3 + Math.random() * 6,
+      ampY: 2 + Math.random() * 4,
+      speed: 22 + Math.random() * 14,
+      age: 0,
+      past: false,
     });
   }
 
@@ -246,9 +331,17 @@
   function resetDogfight() {
     ties = [];
     turrets = [];
+    dogfightTime = 0;
+    leanX = 0;
+    leanY = 0;
+    aimX = CX;
+    aimY = CY;
+    mouseX = CX;
+    mouseY = CY;
+    initStars();
     var i;
-    for (i = 0; i < 6; i++) {
-      spawnTie(30 + i * 12);
+    for (i = 0; i < 8; i++) {
+      spawnTie(25 + i * (Z_FAR - 25) / 8);
     }
   }
 
@@ -288,20 +381,66 @@
     }
   }
 
+  function updateCamera(dt) {
+    var k = 1 - Math.exp(-10 * dt);
+    aimX += (mouseX - aimX) * k;
+    aimY += (mouseY - aimY) * k;
+
+    var nx = (aimX - CX) / CX;
+    var ny = (aimY - CY) / CY;
+    if (nx > 1) {
+      nx = 1;
+    }
+    if (nx < -1) {
+      nx = -1;
+    }
+    if (ny > 1) {
+      ny = 1;
+    }
+    if (ny < -1) {
+      ny = -1;
+    }
+
+    var targetLeanX = -nx * 28;
+    var targetLeanY = -ny * 18;
+    var lk = 1 - Math.exp(-6 * dt);
+    leanX += (targetLeanX - leanX) * lk;
+    leanY += (targetLeanY - leanY) * lk;
+  }
+
   function updateDogfight(dt) {
+    dogfightTime += dt;
+    updateCamera(dt);
+    updateStars(dt, 55);
+
     var i;
     for (i = ties.length - 1; i >= 0; i--) {
       var t = ties[i];
-      t.z -= (12 + scrollSpeed * 0.3) * dt;
-      t.x += t.vx * dt;
-      t.y += Math.sin(gridScroll * 0.2 + i) * 2 * dt;
-      if (t.z < Z_NEAR) {
-        t.z = Z_FAR - Math.random() * 10;
-        t.x = (Math.random() - 0.5) * 20;
-        t.y = -2 + (Math.random() - 0.5) * 6;
+      t.age += dt;
+      t.z -= t.speed * dt;
+
+      t.x = t.baseX + Math.sin(t.age * t.freq + t.phase) * t.ampX;
+      t.y = t.baseY + Math.sin(t.age * t.freq * 0.75 + t.phase * 1.3) * t.ampY;
+
+      // Near the camera: climb and bank so the fighter flies over the canopy.
+      if (t.z < 8) {
+        var lift = (8 - t.z) / 8;
+        t.y -= lift * 10;
+        t.x += Math.sin(t.phase) * lift * 6;
+        t.past = true;
+      }
+
+      // Fully past the player — recycle at the horizon (chasing / being chased).
+      if (t.z < Z_FLY) {
+        ties.splice(i, 1);
+        spawnTie(Z_FAR - Math.random() * 12);
       }
     }
-    gridScroll += dt * 10;
+
+    // Keep pressure: always a few fighters in the lane.
+    while (ties.length < 8) {
+      spawnTie(Z_FAR - Math.random() * 20);
+    }
   }
 
   function updateTrench(dt) {
@@ -331,10 +470,12 @@
   }
 
   function drawDogfight() {
+    drawStars();
+
     var list = [];
     var i;
     for (i = 0; i < ties.length; i++) {
-      if (ties[i].z >= Z_NEAR && ties[i].z <= Z_FAR) {
+      if (ties[i].z >= Z_FLY && ties[i].z <= Z_FAR) {
         list.push(ties[i]);
       }
     }
@@ -346,18 +487,27 @@
     }
   }
 
+  /**
+   * Crosshair follows the mouse slightly; scene lean is the opposite drift
+   * applied inside project(), so the world banks under the reticle.
+   */
   function drawCrosshair() {
+    var nx = (aimX - CX) / CX;
+    var ny = (aimY - CY) / CY;
+    var hx = CX + nx * 36;
+    var hy = CY + ny * 28;
+
     ctx.beginPath();
     ctx.strokeStyle = COL_HUD;
-    ctx.lineWidth = 1;
-    ctx.moveTo(CX - 10, CY);
-    ctx.lineTo(CX - 3, CY);
-    ctx.moveTo(CX + 3, CY);
-    ctx.lineTo(CX + 10, CY);
-    ctx.moveTo(CX, CY - 10);
-    ctx.lineTo(CX, CY - 3);
-    ctx.moveTo(CX, CY + 3);
-    ctx.lineTo(CX, CY + 10);
+    ctx.lineWidth = 1.5;
+    ctx.moveTo(hx - 12, hy);
+    ctx.lineTo(hx - 4, hy);
+    ctx.moveTo(hx + 4, hy);
+    ctx.lineTo(hx + 12, hy);
+    ctx.moveTo(hx, hy - 12);
+    ctx.lineTo(hx, hy - 4);
+    ctx.moveTo(hx, hy + 4);
+    ctx.lineTo(hx, hy + 12);
     ctx.stroke();
   }
 
@@ -365,19 +515,40 @@
     ctx.beginPath();
     ctx.strokeStyle = "#113311";
     ctx.lineWidth = 1;
-    ctx.moveTo(CX - 4, CY);
-    ctx.lineTo(CX + 4, CY);
-    ctx.moveTo(CX, CY - 4);
-    ctx.lineTo(CX, CY + 4);
+    ctx.moveTo(CX - 4 + leanX, CY + leanY);
+    ctx.lineTo(CX + 4 + leanX, CY + leanY);
+    ctx.moveTo(CX + leanX, CY - 4 + leanY);
+    ctx.lineTo(CX + leanX, CY + 4 + leanY);
     ctx.stroke();
+  }
+
+  function pointerToCanvas(clientX, clientY) {
+    var rect = canvas.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) {
+      return { x: CX, y: CY };
+    }
+    return {
+      x: ((clientX - rect.left) / rect.width) * W,
+      y: ((clientY - rect.top) / rect.height) * H,
+    };
+  }
+
+  function onPointerMove(e) {
+    var p = pointerToCanvas(e.clientX, e.clientY);
+    mouseX = p.x;
+    mouseY = p.y;
   }
 
   function update(dt) {
     if (state === STATE_SURFACE) {
+      leanX = 0;
+      leanY = 0;
       updateSurface(dt);
     } else if (state === STATE_DOGFIGHT) {
       updateDogfight(dt);
     } else if (state === STATE_TRENCH) {
+      leanX = 0;
+      leanY = 0;
       updateTrench(dt);
     }
   }
@@ -387,17 +558,19 @@
       return;
     }
     clearScreen();
-    drawVanishingPointMark();
 
     if (state === STATE_SURFACE) {
+      drawVanishingPointMark();
       drawSurface();
+      drawCrosshair();
     } else if (state === STATE_DOGFIGHT) {
       drawDogfight();
+      drawCrosshair();
     } else if (state === STATE_TRENCH) {
+      drawVanishingPointMark();
       drawTrenchStub();
+      drawCrosshair();
     }
-
-    drawCrosshair();
   }
 
   function loop(now) {
@@ -412,7 +585,7 @@
   }
 
   function startFromMenu() {
-    setState(STATE_SURFACE);
+    setState(STATE_DOGFIGHT);
   }
 
   btnStart.addEventListener("click", startFromMenu);
@@ -420,6 +593,18 @@
     e.preventDefault();
     startFromMenu();
   });
+
+  canvas.addEventListener("mousemove", onPointerMove);
+  canvas.addEventListener(
+    "touchmove",
+    function (e) {
+      if (e.touches.length) {
+        onPointerMove(e.touches[0]);
+        e.preventDefault();
+      }
+    },
+    { passive: false }
+  );
 
   window.addEventListener("keydown", function (e) {
     if (e.key === "Escape") {
@@ -441,10 +626,11 @@
       overlay.classList.remove("hidden");
       document.getElementById("overlay-title").textContent = "GAME OVER";
       document.getElementById("instructions").textContent =
-        "Press START SURFACE or keys 1/2/3 to switch states.";
+        "START or key 1 = dogfight, 2 = surface, 3 = trench.";
     }
   });
 
+  initStars();
   setState(STATE_MENU);
   requestAnimationFrame(loop);
 })();
