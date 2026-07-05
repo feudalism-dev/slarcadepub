@@ -5,7 +5,12 @@
 
   var canvas = document.getElementById("game");
   var gameWrap = document.getElementById("game-wrap");
-  var ctx = canvas.getContext("2d");
+  var displayCtx = canvas.getContext("2d");
+  displayCtx.imageSmoothingEnabled = false;
+  var worldCanvas = document.createElement("canvas");
+  worldCanvas.width = canvas.width;
+  worldCanvas.height = canvas.height;
+  var ctx = worldCanvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   var overlay = document.getElementById("overlay");
   var overlayTitle = document.getElementById("overlay-title");
@@ -15,6 +20,7 @@
   var btnLeaderboard = document.getElementById("btn-leaderboard");
   var btnModalClose = document.getElementById("btn-modal-close");
   var hud = document.getElementById("hud");
+  var shieldFill = document.getElementById("shield-fill");
   var startScoresEl = document.getElementById("start-scores");
   var personalEl = document.getElementById("personal-score");
   var highScoreEl = document.getElementById("high-score");
@@ -44,8 +50,8 @@
   var STAGE_TRENCH = "trench";
   var STAGE_EXPLODE = "explode";
 
-  var READY_FRAMES = 120;
-  var RESPAWN_FRAMES = 90;
+  var READY_SEC = 2;
+  var RESPAWN_SEC = 1.5;
   var STARTING_LIVES = 3;
   var LIFE_BONUS_SCORES = [3000, 8000, 15000];
   var CONTINUE_TIMEOUT_MS = 30000;
@@ -63,6 +69,9 @@
   var lives = 3;
   var wave = 1;
   var frame = 0;
+  var gameTime = 0;
+  var dt = 1 / 60;
+  var lastFrameTime = 0;
   var readyTimer = 0;
   var playerInvuln = 0;
   var lifeBonusesClaimed = 0;
@@ -81,15 +90,22 @@
   var shipX = 0;
   var shipY = 0;
   var lastShot = 0;
-  var fireCooldown = 10;
+  var fireCooldownMs = 110;
+
+  var particles = [];
+  var floatTexts = [];
+  var shakeAmount = 0;
+  var shakeX = 0;
+  var shakeY = 0;
+  var audioCtx = null;
+  var audioReady = false;
 
   var stars = [];
   var ties = [];
   var bolts = [];
-  var tieSpawnTimer = 0;
-  var tiesKilled = 0;
-  var tiesRequired = 12;
-  var enemyShotTimer = 0;
+  var tieSpawnAcc = 0;
+  var enemyShotAcc = 0;
+  var towerSpawnAcc = 0;
 
   var approachTimer = 0;
   var deathStarZ = 1800;
@@ -100,7 +116,6 @@
   var trenchProgress = 0;
   var trenchSpeed = 2.8;
   var towers = [];
-  var towerSpawnTimer = 0;
   var exhaustVisible = false;
   var exhaustHit = false;
   var trenchRoll = 0;
@@ -123,6 +138,168 @@
 
   function setGameActive(active) {
     gameWrap.classList.toggle("game-active", !!active);
+  }
+
+  function ensureAudio() {
+    if (audioReady) {
+      return;
+    }
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) {
+        return;
+      }
+      audioCtx = new AC();
+      audioReady = true;
+    } catch (e) {
+      audioReady = false;
+    }
+  }
+
+  function playTone(freq, dur, type, vol) {
+    if (!audioCtx || !audioReady) {
+      return;
+    }
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.type = type || "square";
+    osc.frequency.value = freq;
+    gain.gain.value = vol || 0.04;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    var t = audioCtx.currentTime;
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  function playLaserSound() {
+    playTone(880, 0.06, "square", 0.035);
+    playTone(440, 0.08, "sawtooth", 0.02);
+  }
+
+  function playHitSound() {
+    playTone(120, 0.15, "sawtooth", 0.05);
+  }
+
+  function playKillSound() {
+    playTone(660, 0.05, "square", 0.04);
+    playTone(990, 0.08, "square", 0.03);
+  }
+
+  function playExplosionSound() {
+    playTone(80, 0.35, "sawtooth", 0.06);
+    playTone(40, 0.5, "square", 0.04);
+  }
+
+  function addShake(amount) {
+    shakeAmount = Math.min(shakeAmount + amount, 16);
+  }
+
+  function spawnParticles(x, y, color, count, speed) {
+    var i;
+    for (i = 0; i < count; i++) {
+      var ang = Math.random() * Math.PI * 2;
+      var spd = speed * (0.4 + Math.random() * 0.8);
+      particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        life: 0.25 + Math.random() * 0.45,
+        maxLife: 0.7,
+        color: color,
+        size: 1 + Math.random() * 2,
+      });
+    }
+  }
+
+  function spawnFloatText(x, y, text, color) {
+    floatTexts.push({
+      x: x,
+      y: y,
+      text: text,
+      color: color || WIRE_YELLOW,
+      life: 1.2,
+    });
+  }
+
+  function updateParticles() {
+    var i;
+    for (i = particles.length - 1; i >= 0; i--) {
+      var p = particles[i];
+      p.life -= dt;
+      if (p.life <= 0) {
+        particles.splice(i, 1);
+        continue;
+      }
+      p.x += p.vx * dt * 60;
+      p.y += p.vy * dt * 60;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+    }
+    for (i = floatTexts.length - 1; i >= 0; i--) {
+      var ft = floatTexts[i];
+      ft.life -= dt;
+      ft.y -= dt * 28;
+      if (ft.life <= 0) {
+        floatTexts.splice(i, 1);
+      }
+    }
+    if (shakeAmount > 0) {
+      shakeAmount -= dt * 22;
+      if (shakeAmount < 0) {
+        shakeAmount = 0;
+      }
+      shakeX = (Math.random() - 0.5) * shakeAmount;
+      shakeY = (Math.random() - 0.5) * shakeAmount;
+    } else {
+      shakeX = 0;
+      shakeY = 0;
+    }
+  }
+
+  function drawParticles() {
+    var i;
+    for (i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      var a = p.life / p.maxLife;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+    ctx.font = "bold 13px Consolas, monospace";
+    ctx.textAlign = "center";
+    for (i = 0; i < floatTexts.length; i++) {
+      var ft = floatTexts[i];
+      ctx.globalAlpha = Math.min(1, ft.life);
+      ctx.fillStyle = ft.color;
+      ctx.fillText(ft.text, ft.x, ft.y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = "left";
+  }
+
+  function compositeToDisplay() {
+    displayCtx.fillStyle = "#000";
+    displayCtx.fillRect(0, 0, W, H);
+    displayCtx.save();
+    displayCtx.globalAlpha = 0.5;
+    displayCtx.filter = "blur(3px)";
+    displayCtx.drawImage(worldCanvas, shakeX, shakeY);
+    displayCtx.restore();
+    displayCtx.globalAlpha = 1;
+    displayCtx.filter = "none";
+    displayCtx.drawImage(worldCanvas, shakeX, shakeY);
+    if (hitFlash > 0) {
+      displayCtx.fillStyle = "rgba(255, 60, 60, " + hitFlash * 0.025 + ")";
+      displayCtx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function dtScale(speedPerFrame) {
+    return speedPerFrame * dt * 60;
   }
 
   function pointerToCanvas(clientX, clientY) {
@@ -265,7 +442,7 @@
     ctx.fillStyle = "#fff";
     for (i = 0; i < stars.length; i++) {
       var s = stars[i];
-      s.z -= s.speed * speedMul;
+      s.z -= s.speed * speedMul * dt * 60;
       if (s.z < 1) {
         s.z = 1400 + Math.random() * 900;
         s.x = (Math.random() - 0.5) * 2000;
@@ -362,11 +539,13 @@
   }
 
   function fireLaser() {
-    if (frame - lastShot < fireCooldown) {
+    var now = performance.now();
+    if (now - lastShot < fireCooldownMs) {
       return;
     }
-    lastShot = frame;
-    laserFlash = 10;
+    lastShot = now;
+    laserFlash = 0.12;
+    playLaserSound();
 
     if (stage === STAGE_BATTLE) {
       var best = null;
@@ -393,8 +572,12 @@
         best.alive = false;
         tiesKilled++;
         score += 100 + wave * 15;
-        hitFlash = 8;
+        hitFlash = 0.15;
         killFlash.push({ x: aimX, y: aimY, t: 12 });
+        spawnParticles(aimX, aimY, WIRE_YELLOW, 14, 4);
+        spawnFloatText(aimX, aimY - 20, "+" + (100 + wave * 15), WIRE_YELLOW);
+        playKillSound();
+        addShake(3);
         checkLifeBonuses();
         updateHud();
       }
@@ -418,8 +601,10 @@
           st.alive = false;
           surfaceKilled++;
           score += 200;
-          hitFlash = 6;
+          hitFlash = 0.12;
           killFlash.push({ x: aimX, y: aimY, t: 10 });
+          spawnParticles(aimX, aimY, WIRE_RED, 10, 3);
+          playKillSound();
           updateHud();
           return;
         }
@@ -443,8 +628,10 @@
         if (tdx * tdx + tdy * tdy < 700) {
           tw.alive = false;
           score += 300;
-          hitFlash = 6;
+          hitFlash = 0.12;
           killFlash.push({ x: aimX, y: aimY, t: 10 });
+          spawnParticles(aimX, aimY, WIRE_CYAN, 10, 3);
+          playKillSound();
           updateHud();
           return;
         }
@@ -457,7 +644,11 @@
           if (edx * edx + edy * edy < 350) {
             exhaustHit = true;
             score += 5000 + wave * 500;
-            hitFlash = 24;
+            hitFlash = 0.5;
+            spawnParticles(aimX, aimY, WIRE_RED, 40, 8);
+            spawnFloatText(aimX, aimY - 30, "BULLSEYE!", WIRE_RED);
+            playExplosionSound();
+            addShake(14);
             updateHud();
             beginExplosion();
           }
@@ -480,7 +671,7 @@
       sy: p.y,
       vx: (dx / len) * spd,
       vy: (dy / len) * spd,
-      life: 90,
+      life: 1.4,
     });
   }
 
@@ -489,8 +680,11 @@
       return;
     }
     shield -= amount;
-    hitFlash = 12;
-    playerInvuln = 50;
+    hitFlash = 0.2;
+    playerInvuln = 1.2;
+    playHitSound();
+    addShake(6);
+    spawnParticles(aimX, aimY, WIRE_RED, 8, 5);
     if (shield <= 0) {
       shield = 100;
       lives--;
@@ -508,9 +702,9 @@
     var i;
     for (i = bolts.length - 1; i >= 0; i--) {
       var b = bolts[i];
-      b.sx += b.vx;
-      b.sy += b.vy;
-      b.life--;
+      b.sx += b.vx * dt * 60;
+      b.sy += b.vy * dt * 60;
+      b.life -= dt;
       if (b.life <= 0) {
         bolts.splice(i, 1);
         continue;
@@ -543,10 +737,10 @@
   }
 
   function updateBattle() {
-    tieSpawnTimer++;
-    var spawnInterval = Math.max(22, 50 - wave * 3);
-    if (tieSpawnTimer >= spawnInterval && tiesKilled + aliveTies() < tiesRequired + 5) {
-      tieSpawnTimer = 0;
+    tieSpawnAcc += dt;
+    var spawnInterval = Math.max(0.35, 0.85 - wave * 0.04);
+    if (tieSpawnAcc >= spawnInterval && tiesKilled + aliveTies() < tiesRequired + 5) {
+      tieSpawnAcc = 0;
       spawnTie();
     }
 
@@ -557,26 +751,27 @@
         ties.splice(i, 1);
         continue;
       }
+      var spd = dt * 60;
       if (t.pattern === 1) {
-        t.x += t.vx * 2;
-        t.y += Math.sin(frame * 0.06 + t.phase) * 2.2;
+        t.x += t.vx * 2 * spd;
+        t.y += Math.sin(gameTime * 3.6 + t.phase) * 2.2 * spd;
       } else if (t.pattern === 2) {
-        t.x += Math.sin(frame * 0.05 + t.phase) * 2.5;
-        t.y += Math.cos(frame * 0.04 + t.phase) * 1.8;
+        t.x += Math.sin(gameTime * 3 + t.phase) * 2.5 * spd;
+        t.y += Math.cos(gameTime * 2.4 + t.phase) * 1.8 * spd;
       } else {
-        t.x += t.vx;
-        t.y += Math.sin(frame * 0.04 + t.phase) * 0.8;
+        t.x += t.vx * spd;
+        t.y += Math.sin(gameTime * 2.4 + t.phase) * 0.8 * spd;
       }
-      t.z -= t.speed;
+      t.z -= t.speed * spd;
       if (t.z < 25) {
         t.alive = false;
         damagePlayer(40);
       }
     }
 
-    enemyShotTimer++;
-    if (enemyShotTimer >= Math.max(35, 80 - wave * 5)) {
-      enemyShotTimer = 0;
+    enemyShotAcc += dt;
+    if (enemyShotAcc >= Math.max(0.35, 0.8 - wave * 0.05)) {
+      enemyShotAcc = 0;
       tryEnemyShot();
     }
 
@@ -614,8 +809,8 @@
   }
 
   function updateApproach() {
-    approachTimer++;
-    deathStarZ -= 5 + wave * 0.4;
+    approachTimer += dt * 60;
+    deathStarZ -= dtScale(5 + wave * 0.4);
     var i;
     for (i = surfaceTargets.length - 1; i >= 0; i--) {
       if (!surfaceTargets[i].alive) {
@@ -633,7 +828,7 @@
     stage = STAGE_TRENCH;
     trenchProgress = 0;
     towers = [];
-    towerSpawnTimer = 0;
+    towerSpawnAcc = 0;
     exhaustVisible = false;
     exhaustHit = false;
     shipX = 0;
@@ -653,28 +848,29 @@
   }
 
   function updateTrench() {
-    trenchProgress += trenchSpeed + wave * 0.2;
-    trenchRoll += trenchSpeed * 0.8;
+    trenchProgress += dtScale(trenchSpeed + wave * 0.2);
+    trenchRoll += dtScale(trenchSpeed * 0.8);
 
     var wallLimit = 95 - trenchProgress * 0.04;
     if (Math.abs(shipX) > wallLimit) {
-      damagePlayer(3);
+      damagePlayer(35 * dt);
     }
 
-    towerSpawnTimer++;
-    if (towerSpawnTimer >= Math.max(30, 65 - wave * 4)) {
-      towerSpawnTimer = 0;
+    towerSpawnAcc += dt;
+    if (towerSpawnAcc >= Math.max(0.3, 0.65 - wave * 0.04)) {
+      towerSpawnAcc = 0;
       spawnTower();
     }
 
     var i;
+    var spd = dt * 60;
     for (i = towers.length - 1; i >= 0; i--) {
       var tw = towers[i];
       if (!tw.alive) {
         towers.splice(i, 1);
         continue;
       }
-      tw.z -= trenchSpeed + 1.2;
+      tw.z -= (trenchSpeed + 1.2) * spd;
       if (tw.z < 50 && !tw.fired) {
         tw.fired = true;
         spawnBolt(tw.x + shipX, tw.y + shipY, tw.z);
@@ -690,8 +886,8 @@
       exhaustVisible = true;
     }
 
-    if (shield > 0 && shield < 100 && frame % 25 === 0) {
-      shield += 1;
+    if (shield > 0 && shield < 100) {
+      shield += dt * 4;
       if (shield > 100) {
         shield = 100;
       }
@@ -705,32 +901,43 @@
     explodeScale = 1;
     running = false;
     setGameActive(false);
+    playExplosionSound();
+    addShake(10);
   }
 
   function updateExplosion() {
-    explodeTimer++;
-    explodeScale += 0.09;
+    explodeTimer += dt * 60;
+    explodeScale += dt * 5.4;
+    spawnParticles(
+      CX + (Math.random() - 0.5) * 40,
+      CY + (Math.random() - 0.5) * 40,
+      Math.random() < 0.5 ? WIRE_RED : WIRE_YELLOW,
+      2,
+      6
+    );
     if (explodeTimer > 130) {
       showMissionComplete();
     }
   }
 
   function updateFlightControl() {
-    var smooth = stage === STAGE_TRENCH ? 0.22 : 0.3;
-    aimX += (mouseTargetX - aimX) * smooth;
-    aimY += (mouseTargetY - aimY) * smooth;
+    var rate = stage === STAGE_TRENCH ? 16 : 22;
+    var k = 1 - Math.exp(-rate * dt);
+    aimX += (mouseTargetX - aimX) * k;
+    aimY += (mouseTargetY - aimY) * k;
 
+    var keySpd = dtScale(9);
     if (keys.ArrowLeft || keys.a || keys.A) {
-      mouseTargetX -= 8;
+      mouseTargetX -= keySpd;
     }
     if (keys.ArrowRight || keys.d || keys.D) {
-      mouseTargetX += 8;
+      mouseTargetX += keySpd;
     }
     if (keys.ArrowUp || keys.w || keys.W) {
-      mouseTargetY -= 8;
+      mouseTargetY -= keySpd;
     }
     if (keys.ArrowDown || keys.s || keys.S) {
-      mouseTargetY += 8;
+      mouseTargetY += keySpd;
     }
 
     if (aimX < 30) {
@@ -839,7 +1046,7 @@
     if (exhaustVisible && !exhaustHit) {
       var ex = project(shipX, shipY - 30, 120);
       if (ex) {
-        var r = 16 + Math.sin(frame * 0.25) * 4;
+        var r = 16 + Math.sin(gameTime * 15) * 4;
         strokeGlow(WIRE_RED, 2, 12);
         ctx.beginPath();
         ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2);
@@ -910,8 +1117,8 @@
     if (laserFlash <= 0) {
       return;
     }
-    laserFlash--;
-    strokeGlow("#fff", 3, 14);
+    var alpha = Math.min(1, laserFlash / 0.12);
+    strokeGlow("rgba(255,255,255," + alpha + ")", 3, 14);
     ctx.beginPath();
     ctx.moveTo(CX, H - 24);
     ctx.lineTo(aimX, aimY);
@@ -923,7 +1130,7 @@
     var i;
     for (i = killFlash.length - 1; i >= 0; i--) {
       var k = killFlash[i];
-      k.t--;
+      k.t -= dt * 60;
       if (k.t <= 0) {
         killFlash.splice(i, 1);
         continue;
@@ -977,11 +1184,15 @@
     ctx.fillRect(0, 0, W, H);
 
     if (phase !== PHASE_PLAYING && phase !== PHASE_READY) {
+      displayCtx.fillStyle = "#000";
+      displayCtx.fillRect(0, 0, W, H);
       return;
     }
 
     if (stage === STAGE_EXPLODE) {
       drawExplosion();
+      drawParticles();
+      compositeToDisplay();
       return;
     }
 
@@ -1017,29 +1228,33 @@
     drawCrosshair();
     drawLaserBeam();
     drawKillFlashes();
+    drawParticles();
     drawStageLabel();
-
-    if (hitFlash > 0) {
-      hitFlash--;
-      ctx.fillStyle = "rgba(255, 60, 60, 0.28)";
-      ctx.fillRect(0, 0, W, H);
-    }
+    compositeToDisplay();
   }
 
   function updatePlaying() {
-    frame++;
+    gameTime += dt;
+    frame += dt * 60;
     if (playerInvuln > 0) {
-      playerInvuln--;
+      playerInvuln -= dt;
+    }
+    if (laserFlash > 0) {
+      laserFlash -= dt;
+    }
+    if (hitFlash > 0) {
+      hitFlash -= dt;
     }
     if (bonusFlashTimer > 0) {
-      bonusFlashTimer--;
-      if (bonusFlashTimer === 0) {
+      bonusFlashTimer -= dt;
+      if (bonusFlashTimer <= 0) {
         bonusFlashText = "";
         updateHud();
       }
     }
 
     updateFlightControl();
+    updateParticles();
 
     if (stage === STAGE_BATTLE) {
       updateBattle();
@@ -1059,13 +1274,14 @@
       "   WAVE " +
       wave +
       "   LIVES " +
-      lives +
-      "   SHIELD " +
-      shield;
+      lives;
     if (bonusFlashTimer > 0) {
       line += "   |   " + bonusFlashText;
     }
     hud.textContent = line;
+    if (shieldFill) {
+      shieldFill.style.width = Math.max(0, Math.min(100, shield)) + "%";
+    }
   }
 
   function checkLifeBonuses() {
@@ -1077,7 +1293,7 @@
       lives++;
       lifeBonusesClaimed = i + 1;
       bonusFlashText = "EXTRA LIFE — " + LIFE_BONUS_SCORES[i] + " pts!";
-      bonusFlashTimer = 150;
+      bonusFlashTimer = 2.5;
       updateHud();
     }
   }
@@ -1142,9 +1358,9 @@
       return;
     }
     resetDeathContinue();
-    playerInvuln = RESPAWN_FRAMES;
+    playerInvuln = RESPAWN_SEC;
     beginReadyCountdown("GET READY!", stageLabelHint() + " — stay on target!");
-    readyTimer = RESPAWN_FRAMES;
+    readyTimer = READY_SEC;
   }
 
   function stageLabelHint() {
@@ -1181,7 +1397,7 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL WARS";
     instructionsEl.textContent =
-      "Arcade-style vector combat. Mouse = flight yoke. Click or Space = fire lasers. Forward flight is automatic — no thrust control, just like the original cabinet.";
+      "Modern smooth controls with a retro vector cabinet look. Mouse = yoke. Click / Space = fire. Auto-thrust in the trench — no throttle needed.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -1197,7 +1413,7 @@
   function beginReadyCountdown(titleText, hintText) {
     phase = PHASE_READY;
     running = false;
-    readyTimer = READY_FRAMES;
+    readyTimer = READY_SEC;
     overlay.classList.remove("hidden");
     overlayTitle.textContent = titleText || "GET READY!";
     instructionsEl.textContent = hintText || "Red Five standing by…";
@@ -1323,8 +1539,9 @@
   }
 
   function updateReady() {
-    frame++;
-    readyTimer--;
+    gameTime += dt;
+    frame += dt * 60;
+    readyTimer -= dt;
     if (readyTimer <= 0) {
       phase = PHASE_PLAYING;
       running = true;
@@ -1334,23 +1551,30 @@
       setGameActive(true);
       mouseTargetX = aimX;
       mouseTargetY = aimY;
-    } else if (readyTimer <= 60) {
+    } else if (readyTimer <= 1) {
       overlayTitle.textContent = "GO!";
     }
   }
 
-  function update() {
+  function update(dtStep) {
+    dt = dtStep;
     if (phase === PHASE_PLAYING && running) {
       updatePlaying();
     } else if (phase === PHASE_READY) {
       updateReady();
     } else if (phase === PHASE_LEVEL && stage === STAGE_EXPLODE) {
       updateExplosion();
+      updateParticles();
     }
   }
 
-  function loop() {
-    update();
+  function loop(now) {
+    if (!lastFrameTime) {
+      lastFrameTime = now;
+    }
+    var step = Math.min(0.05, (now - lastFrameTime) / 1000);
+    lastFrameTime = now;
+    update(step);
     draw();
     requestAnimationFrame(loop);
   }
@@ -1426,19 +1650,21 @@
     bolts = [];
     tiesKilled = 0;
     tiesRequired = 10 + waveNum * 3;
-    tieSpawnTimer = 0;
-    enemyShotTimer = 0;
+    tieSpawnAcc = 0;
+    enemyShotAcc = 0;
     approachTimer = 0;
     deathStarZ = 1700;
     surfaceTargets = [];
     surfaceKilled = 0;
     trenchProgress = 0;
     towers = [];
-    towerSpawnTimer = 0;
+    towerSpawnAcc = 0;
     exhaustVisible = false;
     exhaustHit = false;
     explodeTimer = 0;
     killFlash = [];
+    particles = [];
+    floatTexts = [];
     shield = 100;
     aimX = CX;
     aimY = CY;
@@ -1468,6 +1694,10 @@
       return;
     }
     resetDeathContinue();
+    ensureAudio();
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
     score = 0;
     lives = STARTING_LIVES;
     wave = 1;

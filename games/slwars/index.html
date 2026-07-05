@@ -17,17 +17,18 @@
         background: #020208;
       }
     </style>
-    <link rel="stylesheet" href="style.css?v=2" />
+    <link rel="stylesheet" href="style.css?v=3" />
   </head>
   <body>
     <div id="app">
       <div id="game-wrap">
         <canvas id="game" width="768" height="640"></canvas>
         <div id="hud"></div>
+        <div id="shield-bar" aria-hidden="true"><span id="shield-fill"></span></div>
         <div id="overlay">
           <div>
             <h1 id="overlay-title">SL WARS</h1>
-            <p id="instructions">Move mouse to fly / aim (like the arcade yoke). Click or Space to fire. No thrust — you auto-fly forward in the trench.</p>
+            <p id="instructions">Mouse to aim and fly. Click or Space to fire. Smooth modern controls — retro vector look.</p>
             <p id="player-line">Player: …</p>
             <div id="start-scores" class="start-scores">
               <p id="personal-score">Your top score: —</p>
@@ -54,6 +55,6 @@
       </div>
     </div>
     <script src="../../shared/sl-api.js?v=18"></script>
-    <script src="game.js?v=2"></script>
+    <script src="game.js?v=3"></script>
   </body>
 </html>
