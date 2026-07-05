@@ -28,6 +28,13 @@
       "description": "Chomp dots, dodge ghosts, clear the maze — Pac-Man-style arcade action.",
       "url": "games/munchman/",
       "status": "available"
+    },
+    {
+      "id": "slwars",
+      "title": "SL Wars",
+      "description": "Wireframe vector battle — TIE fighters, trench run, and the Death Star exhaust port.",
+      "url": "games/slwars/",
+      "status": "available"
     }
   ]
 }
