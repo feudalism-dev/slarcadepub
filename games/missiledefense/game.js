@@ -63,6 +63,7 @@
   var enemyMissiles = [];
   var flyers = [];
   var waveSpawnsLeft = 0;
+  var flyerSpawnsLeft = 0;
   var spawnTimer = 0;
   var spawnInterval = 55;
   var flyerSpawnTimer = 0;
@@ -226,12 +227,22 @@
     if (wave < 4) {
       return 1;
     }
-    return 1 + Math.floor((wave - 3) / 2);
+    return 2;
+  }
+
+  function flyerSpawnsForWave() {
+    if (wave < 2) {
+      return 0;
+    }
+    if (wave < 4) {
+      return 1;
+    }
+    return 2;
   }
 
   function spawnFlyer() {
-    if (flyers.length >= maxFlyersForWave()) {
-      return;
+    if (flyerSpawnsLeft <= 0 || flyers.length >= maxFlyersForWave()) {
+      return false;
     }
     var fromLeft = Math.random() < 0.5;
     var isSaucer = wave >= 4 && Math.random() < 0.42;
@@ -240,7 +251,7 @@
     if (!fromLeft) {
       speed = -speed;
     }
-    flyers.push({
+    var flyer = {
       type: isSaucer ? FLYER_SAUCER : FLYER_BOMBER,
       x: fromLeft ? -28 : W + 28,
       y: y,
@@ -249,7 +260,10 @@
       h: isSaucer ? 10 : 12,
       dropTimer: 60 + Math.floor(Math.random() * 50),
       dropInterval: Math.max(70, 130 - wave * 6),
-    });
+      dropsLeft: isSaucer ? 0 : Math.min(3, 1 + Math.floor(wave / 3)),
+    };
+    flyers.push(flyer);
+    return true;
   }
 
   function dropBombFromFlyer(f) {
@@ -442,10 +456,11 @@
     for (i = flyers.length - 1; i >= 0; i--) {
       var f = flyers[i];
       f.x += f.vx;
-      if (f.type === FLYER_BOMBER) {
+      if (f.type === FLYER_BOMBER && f.dropsLeft > 0) {
         f.dropTimer--;
         if (f.dropTimer <= 0) {
           dropBombFromFlyer(f);
+          f.dropsLeft--;
           f.dropTimer = f.dropInterval;
         }
       }
@@ -563,12 +578,13 @@
       }
     }
 
-    if (wave >= 2) {
+    if (wave >= 2 && flyerSpawnsLeft > 0) {
       flyerSpawnTimer++;
       if (flyerSpawnTimer >= flyerSpawnInterval) {
         flyerSpawnTimer = 0;
-        spawnFlyer();
-        flyerSpawnInterval = Math.max(200, 340 - wave * 18);
+        if (spawnFlyer()) {
+          flyerSpawnsLeft--;
+        }
       }
     }
 
@@ -769,7 +785,7 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL MISSILE DEFENSE";
     instructionsEl.textContent =
-      "Click or tap to fire interceptors. Bonus cities at 2,000 / 5,000 / 10,000 pts.";
+      "Click or tap to fire interceptors. Clear each wave to advance — bonus cities at 2,000 / 5,000 / 10,000 pts.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -993,10 +1009,11 @@
     enemyMissiles = [];
     flyers = [];
     waveSpawnsLeft = waveEnemyCount();
+    flyerSpawnsLeft = flyerSpawnsForWave();
     spawnTimer = 0;
     spawnInterval = Math.max(32, 76 - wave * 5);
     flyerSpawnTimer = 0;
-    flyerSpawnInterval = Math.max(200, 360 - wave * 20);
+    flyerSpawnInterval = Math.max(220, 360 - wave * 15);
     updateHud();
     var hint =
       waveSpawnsLeft + " inbound tracks detected. Click to fire interceptors.";
