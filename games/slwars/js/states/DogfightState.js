@@ -9,28 +9,36 @@ import {
   drawTie,
 } from "../entities/TieFighter.js";
 
-const TIE_POOL_SIZE = 16;
-const ACTIVE_TIES = 8;
+const TIE_POOL_SIZE = 8;
+/** Few on-screen targets so each is trackable. */
+const ACTIVE_TIES = 3;
+/** Minimum gap between spawns (seconds). */
+const SPAWN_COOLDOWN = 1.4;
+/** New fighters enter near the horizon. */
+const SPAWN_Z_MIN = 850;
+const SPAWN_Z_MAX = 1000;
 
 /**
- * Phase 1 dogfight with true Z perspective.
- *
- * A) Update: z -= speed (approach camera)
- * B) Cull: z <= 0 → release
- * C) Draw: sort farthest-first, project with PF/(PF+z)
+ * Phase 1 dogfight — 3D rotating TIE wireframes, sparse targets.
  */
 export function createDogfightState(input) {
   let stars;
   let player;
   let ties;
+  let spawnTimer = 0;
   const drawList = [];
 
-  function spawnWave() {
-    ties.releaseAll();
-    for (let i = 0; i < ACTIVE_TIES; i++) {
-      const t = ties.acquire();
-      resetTie(t, 200 + i * ((Z_HORIZON - 200) / ACTIVE_TIES));
+  function trySpawn() {
+    if (ties.active.length >= ACTIVE_TIES) {
+      return;
     }
+    if (spawnTimer > 0) {
+      return;
+    }
+    const t = ties.acquire();
+    const z = SPAWN_Z_MIN + Math.random() * (SPAWN_Z_MAX - SPAWN_Z_MIN);
+    resetTie(t, z);
+    spawnTimer = SPAWN_COOLDOWN;
   }
 
   return {
@@ -40,7 +48,14 @@ export function createDogfightState(input) {
       ties = new Pool(createTie, TIE_POOL_SIZE);
       engine.camera.x = 0;
       engine.camera.y = 0;
-      spawnWave();
+      spawnTimer = 0;
+      ties.releaseAll();
+      // Stagger initial wave far apart in depth
+      for (let i = 0; i < ACTIVE_TIES; i++) {
+        const t = ties.acquire();
+        resetTie(t, SPAWN_Z_MIN + i * ((SPAWN_Z_MAX - SPAWN_Z_MIN) / ACTIVE_TIES));
+        spawnTimer = SPAWN_COOLDOWN;
+      }
     },
 
     exit() {
@@ -53,12 +68,12 @@ export function createDogfightState(input) {
       player.update(input);
       stars.update(dt, 420);
 
-      // A + B: approach and cull past player
-      ties.updateEach(dt, (t) => updateTie(t, dt));
-
-      while (ties.active.length < ACTIVE_TIES) {
-        resetTie(ties.acquire(), Z_HORIZON - Math.random() * 120);
+      if (spawnTimer > 0) {
+        spawnTimer -= dt;
       }
+
+      ties.updateEach(dt, (t) => updateTie(t, dt));
+      trySpawn();
     },
 
     draw(engine) {
@@ -66,7 +81,7 @@ export function createDogfightState(input) {
       renderer.clear("#000");
       stars.draw(renderer, camera);
 
-      // C: sort by Z-depth, farthest first
+      // Farthest first (painter's algorithm for wireframes)
       drawList.length = 0;
       const active = ties.active;
       for (let i = 0; i < active.length; i++) {
