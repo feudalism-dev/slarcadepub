@@ -41,6 +41,11 @@ canvas {
   pointer-events: none;
 }
 
+#game-wrap.game-active canvas {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
 #overlay {
   position: absolute;
   inset: 0;
