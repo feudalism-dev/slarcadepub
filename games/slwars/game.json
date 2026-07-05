@@ -1,6 +1,6 @@
 {
   "id": "slwars",
   "title": "SL Wars",
-  "version": "0.0.0",
-  "description": "Clean slate — gameplay redesign in progress."
+  "version": "0.2.0",
+  "description": "Phase 1 dogfight — modular perspective engine, starfield, TIE attack runs."
 }
