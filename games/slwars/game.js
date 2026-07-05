@@ -109,6 +109,8 @@
   var stars = [];
   var ties = [];
   var bolts = [];
+  var tiesKilled = 0;
+  var tiesRequired = 10;
   var tieSpawnAcc = 0;
   var enemyShotAcc = 0;
   var towerSpawnAcc = 0;
@@ -2110,12 +2112,21 @@
 
   function loop(now) {
     if (!lastFrameTime) {
-      lastFrameTime = now;
+      lastFrameTime = now || performance.now();
+      requestAnimationFrame(loop);
+      return;
     }
     var step = Math.min(0.05, (now - lastFrameTime) / 1000);
+    if (!(step > 0)) {
+      step = 1 / 60;
+    }
     lastFrameTime = now;
-    update(step);
-    draw();
+    try {
+      update(step);
+      draw();
+    } catch (err) {
+      console.error("SL Wars loop error:", err);
+    }
     requestAnimationFrame(loop);
   }
 
@@ -2244,8 +2255,17 @@
       return;
     }
     if (phase === PHASE_OVER) {
-      showMenuOverlay();
-      phase = PHASE_MENU;
+      score = 0;
+      lives = STARTING_LIVES;
+      wave = 1;
+      lifeBonusesClaimed = 0;
+      bonusFlashTimer = 0;
+      bonusFlashText = "";
+      showMessages([]);
+      unavailableEl.classList.add("hidden");
+      endHintEl.textContent = "";
+      resetMission(wave);
+      startMissionAfterReady("GET READY!", "New run — survive the TIE attack!");
       return;
     }
     resetDeathContinue();
@@ -2387,5 +2407,5 @@
   refreshLeaderboard();
   showMenuOverlay();
   phase = PHASE_MENU;
-  loop();
+  requestAnimationFrame(loop);
 })();
