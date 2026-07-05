@@ -204,7 +204,15 @@
     if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
       return "#";
     }
+    if (!maze.length || !maze[r]) {
+      return MAZE_TEMPLATE[r].charAt(c);
+    }
     return maze[r][c];
+  }
+
+  function isPenBounds(c, r) {
+    return r >= PEN_ROW_TOP && r <= PEN_ROW_BOT &&
+      c >= PEN_COL_LEFT && c <= PEN_COL_RIGHT;
   }
 
   function isWalkableTile(t) {
@@ -286,7 +294,7 @@
     }
     for (r = 0; r < ROWS; r++) {
       for (c = 0; c < COLS; c++) {
-        if (isPenInterior(c, r) && (out[r][c] === "." || out[r][c] === "o")) {
+        if (isPenBounds(c, r) && (out[r][c] === "." || out[r][c] === "o")) {
           out[r][c] = "G";
         }
       }
@@ -448,14 +456,11 @@
   }
 
   function isPenInterior(c, r) {
-    if (r < PEN_ROW_TOP || r > PEN_ROW_BOT) {
-      return false;
-    }
-    if (c < PEN_COL_LEFT || c > PEN_COL_RIGHT) {
+    if (!isPenBounds(c, r)) {
       return false;
     }
     var t = tileAt(c, r);
-    return t === "G" || isWalkableTile(t);
+    return t === "G" || (isWalkableTile(t) && !isGateTile(t));
   }
 
   function validDirs(c, r, forbid, allowPen) {
