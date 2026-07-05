@@ -200,8 +200,8 @@
   }
 
   /**
-   * TIE wireframe. World size is fixed; screen size comes from PERSPECTIVE / z
-   * so z=100 is tiny and z=1 is large. Uses Z_FLY so ships can pass the camera.
+   * Vertex-based TIE wireframe (wings, pod, pylons).
+   * World size is fixed in `s`; screen size is PERSPECTIVE / z via project().
    */
   function drawTie(t) {
     var s = t.s;
@@ -209,19 +209,44 @@
     var y = t.y;
     var z = t.z;
     var c = COL_TIE;
-    var w = z < 8 ? 2 : 1.5;
-    drawLine3(x - s * 2, y, z, x + s * 2, y, z, c, w, Z_FLY);
-    drawLine3(x, y - s, z, x, y + s, z, c, w, Z_FLY);
-    drawLine3(x - s * 2, y - s, z, x - s * 2, y + s, z, c, 1, Z_FLY);
-    drawLine3(x + s * 2, y - s, z, x + s * 2, y + s, z, c, 1, Z_FLY);
-    drawLine3(x - s * 2, y - s, z, x - s * 0.4, y, z, c, 1, Z_FLY);
-    drawLine3(x - s * 2, y + s, z, x - s * 0.4, y, z, c, 1, Z_FLY);
-    drawLine3(x + s * 2, y - s, z, x + s * 0.4, y, z, c, 1, Z_FLY);
-    drawLine3(x + s * 2, y + s, z, x + s * 0.4, y, z, c, 1, Z_FLY);
-    drawLine3(x - s * 0.5, y - s * 0.5, z, x + s * 0.5, y - s * 0.5, z, c, 1, Z_FLY);
-    drawLine3(x + s * 0.5, y - s * 0.5, z, x + s * 0.5, y + s * 0.5, z, c, 1, Z_FLY);
-    drawLine3(x + s * 0.5, y + s * 0.5, z, x - s * 0.5, y + s * 0.5, z, c, 1, Z_FLY);
-    drawLine3(x - s * 0.5, y + s * 0.5, z, x - s * 0.5, y - s * 0.5, z, c, 1, Z_FLY);
+    var v = [
+      { x: -s * 2, y: -s },
+      { x: s * 2, y: -s },
+      { x: -s * 2, y: s },
+      { x: s * 2, y: s },
+      { x: -s * 2, y: -s },
+      { x: -s * 2, y: s },
+      { x: s * 2, y: -s },
+      { x: s * 2, y: s },
+      { x: -s * 0.5, y: -s * 0.5 },
+      { x: s * 0.5, y: -s * 0.5 },
+      { x: s * 0.5, y: -s * 0.5 },
+      { x: s * 0.5, y: s * 0.5 },
+      { x: s * 0.5, y: s * 0.5 },
+      { x: -s * 0.5, y: s * 0.5 },
+      { x: -s * 0.5, y: s * 0.5 },
+      { x: -s * 0.5, y: -s * 0.5 },
+      { x: -s * 0.5, y: 0 },
+      { x: -s * 2, y: 0 },
+      { x: s * 0.5, y: 0 },
+      { x: s * 2, y: 0 },
+    ];
+    var i;
+    var p1;
+    var p2;
+
+    ctx.beginPath();
+    ctx.strokeStyle = c;
+    ctx.lineWidth = z < 8 ? 2 : 1.5;
+    for (i = 0; i < v.length; i += 2) {
+      p1 = project(x + v[i].x, y + v[i].y, z, Z_FLY);
+      p2 = project(x + v[i + 1].x, y + v[i + 1].y, z, Z_FLY);
+      if (p1 && p2) {
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+      }
+    }
+    ctx.stroke();
   }
 
   /** Starfield: points rush from horizon (high z) toward camera (low z). */
@@ -296,23 +321,29 @@
   }
 
   /**
-   * Spawn a TIE at the horizon on a curved approach path.
-   * baseX/baseY = path center; sine waves weave as z decreases.
+   * Spawn a TIE on an attack run: periphery at the horizon, arc through
+   * center, then bank past the camera.
    */
   function spawnTie(z) {
     var side = Math.random() < 0.5 ? -1 : 1;
+    var startZ = z === undefined ? Z_FAR : z;
+    var entryX = side * (14 + Math.random() * 18);
+    var entryY = (Math.random() - 0.5) * 14;
     ties.push({
-      baseX: side * (4 + Math.random() * 14),
-      baseY: -1 + (Math.random() - 0.5) * 5,
-      x: 0,
-      y: 0,
-      z: z === undefined ? Z_FAR : z,
+      entryX: entryX,
+      entryY: entryY,
+      exitX: -side * (6 + Math.random() * 12),
+      exitY: entryY - (8 + Math.random() * 6),
+      curveAmp: (10 + Math.random() * 12) * (Math.random() < 0.5 ? -1 : 1),
+      curveAmpY: 4 + Math.random() * 6,
+      x: entryX,
+      y: entryY,
+      z: startZ,
+      startZ: startZ,
       s: 1.1 + Math.random() * 0.4,
       phase: Math.random() * Math.PI * 2,
-      freq: 1.2 + Math.random() * 1.6,
-      ampX: 3 + Math.random() * 6,
-      ampY: 2 + Math.random() * 4,
-      speed: 22 + Math.random() * 14,
+      freq: 1.4 + Math.random() * 1.8,
+      speed: 26 + Math.random() * 16,
       age: 0,
       past: false,
     });
@@ -419,25 +450,43 @@
       t.age += dt;
       t.z -= t.speed * dt;
 
-      t.x = t.baseX + Math.sin(t.age * t.freq + t.phase) * t.ampX;
-      t.y = t.baseY + Math.sin(t.age * t.freq * 0.75 + t.phase * 1.3) * t.ampY;
+      // progress 0 at horizon, 1 at the camera — attack run arc
+      var progress = 1 - t.z / t.startZ;
+      if (progress < 0) {
+        progress = 0;
+      }
+      if (progress > 1) {
+        progress = 1;
+      }
 
-      // Near the camera: climb and bank so the fighter flies over the canopy.
-      if (t.z < 8) {
-        var lift = (8 - t.z) / 8;
-        t.y -= lift * 10;
-        t.x += Math.sin(t.phase) * lift * 6;
+      // Periphery → center (sin peak mid-run) → exit bank past player
+      var arc = Math.sin(progress * Math.PI);
+      t.x =
+        t.entryX * (1 - progress) +
+        t.exitX * progress +
+        arc * t.curveAmp +
+        Math.sin(t.age * t.freq + t.phase) * (2 + arc * 3);
+      t.y =
+        t.entryY * (1 - progress) +
+        t.exitY * progress +
+        arc * t.curveAmpY * 0.35 +
+        Math.sin(t.age * t.freq * 0.8 + t.phase * 1.3) * (1.5 + arc * 2);
+
+      // Close-range banking: player lean pulls near targets (maneuvering feel)
+      if (t.z < 15) {
+        var close = (15 - t.z) / 15;
+        t.x += (leanX / PERSPECTIVE) * t.z * 0.55 * close;
+        t.y += (leanY / PERSPECTIVE) * t.z * 0.55 * close;
         t.past = true;
       }
 
-      // Fully past the player — recycle at the horizon (chasing / being chased).
+      // Fly over / past — recycle at horizon
       if (t.z < Z_FLY) {
         ties.splice(i, 1);
         spawnTie(Z_FAR - Math.random() * 12);
       }
     }
 
-    // Keep pressure: always a few fighters in the lane.
     while (ties.length < 8) {
       spawnTie(Z_FAR - Math.random() * 20);
     }
