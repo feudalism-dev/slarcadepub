@@ -23,6 +23,13 @@
       "status": "available"
     },
     {
+      "id": "alieninfestation",
+      "title": "Alien Infestation",
+      "description": "True Galaga-style convoy entry, tractor beam dual fighter, and Challenging Stages.",
+      "url": "games/alieninfestation/",
+      "status": "available"
+    },
+    {
       "id": "missiledefense",
       "title": "SL Missile Defense",
       "description": "Defend six cities from incoming warheads — Missile Command-style action.",

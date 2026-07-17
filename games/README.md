@@ -13,6 +13,7 @@ https://feudalism-dev.github.io/slarcadepub/games/<id>/
 | `invaders` | SL Invaders | `Arcade_Controller.lsl` + `Arcade_Scores.lsl` |
 | `galaslian` | GalaSLian | `Galaslian_Controller.lsl` + `Galaslian_Scores.lsl` |
 | `galactic` | Galactic | `Galactic_Controller.lsl` + `Galactic_Scores.lsl` |
+| `alieninfestation` | Alien Infestation | `AlienInfestation_Controller.lsl` + `AlienInfestation_Scores.lsl` |
 | `missiledefense` | SL Missile Defense | `MissileDefense_Controller.lsl` + `MissileDefense_Scores.lsl` |
 | `munchman` | Munchman | `Munchman_Controller.lsl` + `Munchman_Scores.lsl` |
 | `slwars` | SL Wars | `SLWars_Controller.lsl` + `SLWars_Scores.lsl` |
