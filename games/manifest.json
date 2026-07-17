@@ -16,6 +16,13 @@
       "status": "available"
     },
     {
+      "id": "galactic",
+      "title": "Galactic",
+      "description": "Galaga-style convoy fighters, diving attacks, dual fighter, and challenge stages.",
+      "url": "games/galactic/",
+      "status": "available"
+    },
+    {
       "id": "missiledefense",
       "title": "SL Missile Defense",
       "description": "Defend six cities from incoming warheads — Missile Command-style action.",
