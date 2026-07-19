@@ -671,6 +671,9 @@
   }
 
   function checkWaveComplete() {
+    if (phase !== PHASE_PLAYING || !running) {
+      return;
+    }
     if (waveSpawnsLeft > 0) {
       return;
     }
@@ -687,33 +690,13 @@
       gameOver("cities");
       return;
     }
+    // Cleared the inbound set — wave succeeds even at 0 ammo (batteries refill next wave)
     var bonus = aliveCities() * CITY_BONUS;
     score += bonus;
     checkCityBonuses();
     running = false;
     setPlayingPointer(false);
     showWaveComplete(bonus);
-  }
-
-  function checkAmmoExhausted() {
-    if (waveSpawnsLeft > 0) {
-      return;
-    }
-    if (enemyMissiles.length > 0) {
-      return;
-    }
-    if (flyers.length > 0) {
-      return;
-    }
-    if (totalAmmo() > 0) {
-      return;
-    }
-    if (interceptors.length > 0 || explosions.length > 0) {
-      return;
-    }
-    if (aliveCities() > 0) {
-      gameOver("ammo");
-    }
   }
 
   function updatePlaying() {
@@ -751,7 +734,6 @@
     updateEnemies();
     updateExplosions();
     checkWaveComplete();
-    checkAmmoExhausted();
   }
 
   function update() {
