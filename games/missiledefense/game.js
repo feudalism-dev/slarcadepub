@@ -86,18 +86,22 @@
   var FLYER_SAUCER = "saucer";
   var FLYER_BOMBER = "bomber";
 
-  var COL_GRID = "rgba(40, 70, 110, 0.35)";
+  var COL_GRID = "rgba(30, 82, 255, 0.15)";
   var COL_GROUND = "#1a8cff";
   var COL_CITY = "#00d4ff";
+  var COL_CITY_FILL = "#0a2a38";
   var COL_CITY_DIM = "#1a4a66";
   var COL_TURRET = "#00ffc8";
+  var COL_TURRET_FILL = "#1a222c";
   var COL_TURRET_EMPTY = "#3a5566";
   var COL_THREAT = "#ff4500";
   var COL_THREAT_SMART = "#ff0044";
   var COL_WARHEAD = "#ffff66";
   var COL_LOCK = "rgba(255, 255, 255, 0.22)";
   var COL_INTERCEPT = "#00ffcc";
+  var COL_HOSTILE = "#ff2244";
   var GRID_SPACING = 40;
+  var nextTrackId = 1;
 
   function setOverlayButtons(showStart, showNext) {
     btnStart.classList.toggle("hidden", !showStart);
@@ -193,18 +197,21 @@
     var i;
     cities = [];
     for (i = 0; i < cityXs.length; i++) {
+      var sid = i + 1;
       cities.push({
         x: cityXs[i],
         y: GROUND_Y - 12,
         w: 14,
         h: 12,
         alive: true,
+        sectorId: "N-" + (sid < 10 ? "0" : "") + sid,
+        label: "SECTOR",
       });
     }
     batteries = [
-      { x: 112, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY },
-      { x: 32, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY },
-      { x: 192, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY },
+      { x: 112, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY, callsign: "BAT-C" },
+      { x: 32, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY, callsign: "BAT-L" },
+      { x: 192, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY, callsign: "BAT-R" },
     ];
   }
 
@@ -374,16 +381,21 @@
     if (!fromLeft) {
       speed = -speed;
     }
+    var tid = nextTrackId++;
+    if (nextTrackId > 99) {
+      nextTrackId = 1;
+    }
     var flyer = {
       type: isSaucer ? FLYER_SAUCER : FLYER_BOMBER,
       x: fromLeft ? -20 : W + 20,
       y: y,
       vx: speed,
-      w: isSaucer ? 14 : 16,
-      h: isSaucer ? 7 : 8,
+      w: isSaucer ? 16 : 18,
+      h: isSaucer ? 8 : 7,
       dropTimer: 50 + Math.floor(Math.random() * 40),
       dropInterval: Math.max(100, 160 - Math.min(40, wave * 2)),
       dropsLeft: isSaucer ? 0 : Math.min(4, 1 + Math.floor(wave / 5)),
+      trackId: "TRK-" + (tid < 10 ? "0" : "") + tid,
     };
     flyers.push(flyer);
     return true;
@@ -803,8 +815,8 @@
     var y = c.y;
     var w = c.w;
     var h = c.h;
-    ctx.strokeStyle = COL_CITY;
-    ctx.lineWidth = 1;
+    // Dark cyan body fill
+    ctx.fillStyle = COL_CITY_FILL;
     ctx.beginPath();
     ctx.moveTo(x, y + h);
     ctx.lineTo(x, y + 4);
@@ -819,22 +831,31 @@
     ctx.lineTo(x + w, y + 4);
     ctx.lineTo(x + w, y + h);
     ctx.closePath();
+    ctx.fill();
+    // Sharp cyan instrumentation outline
+    ctx.strokeStyle = COL_CITY;
+    ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x + 2, y + 7);
-    ctx.lineTo(x + 2, y + h - 1);
-    ctx.moveTo(x + 5, y + 7);
-    ctx.lineTo(x + 5, y + h - 1);
-    ctx.moveTo(x + 9, y + 7);
-    ctx.lineTo(x + 9, y + h - 1);
-    ctx.stroke();
+    // Active grid lights / windows
+    ctx.fillStyle = "#ffe066";
+    ctx.fillRect(x + 2, y + 6, 1, 1);
+    ctx.fillRect(x + 4, y + 6, 1, 1);
+    ctx.fillRect(x + 2, y + 8, 1, 1);
+    ctx.fillRect(x + 4, y + 9, 1, 1);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(x + 9, y + 6, 1, 1);
+    ctx.fillRect(x + 11, y + 6, 1, 1);
+    ctx.fillRect(x + 9, y + 8, 1, 1);
+    ctx.fillRect(x + 11, y + 9, 1, 1);
+    ctx.fillStyle = "#7cf5ff";
+    ctx.fillRect(x + 5, y + 2, 1, 1);
+    ctx.fillRect(x + 9, y + 3, 1, 1);
   }
 
   function drawTurret(b) {
     var armed = b.ammo > 0;
-    ctx.strokeStyle = armed ? COL_TURRET : COL_TURRET_EMPTY;
-    ctx.fillStyle = armed ? "rgba(0, 255, 200, 0.12)" : "rgba(60, 80, 100, 0.15)";
-    ctx.lineWidth = 1.5;
+    // Solid military slate core
+    ctx.fillStyle = COL_TURRET_FILL;
     ctx.beginPath();
     ctx.moveTo(b.x, b.y - 6);
     ctx.lineTo(b.x + 7, b.y + 2);
@@ -843,12 +864,19 @@
     ctx.lineTo(b.x - 7, b.y + 2);
     ctx.closePath();
     ctx.fill();
+    // Tight cyan instrumentation edge
+    ctx.strokeStyle = armed ? COL_TURRET : COL_TURRET_EMPTY;
+    ctx.lineWidth = 1;
     ctx.stroke();
+    // Barrel assembly
+    ctx.fillStyle = COL_TURRET_FILL;
     ctx.beginPath();
-    ctx.moveTo(b.x, b.y - 6);
-    ctx.lineTo(b.x, b.y - 12);
-    ctx.lineTo(b.x + 3, b.y - 9);
-    ctx.lineTo(b.x, b.y - 6);
+    ctx.moveTo(b.x - 1, b.y - 6);
+    ctx.lineTo(b.x, b.y - 13);
+    ctx.lineTo(b.x + 3, b.y - 10);
+    ctx.lineTo(b.x + 1, b.y - 6);
+    ctx.closePath();
+    ctx.fill();
     ctx.stroke();
     ctx.fillStyle = armed ? COL_INTERCEPT : "#668899";
     ctx.font = "7px monospace";
@@ -916,39 +944,67 @@
     }
   }
 
+  function drawFlyerTag(f) {
+    var flash = Math.floor(frame / 8) % 2 === 0;
+    if (!flash) {
+      return;
+    }
+    var tagX = f.x + f.w + 2;
+    var tagY = f.y - 2;
+    if (tagX > W - 36) {
+      tagX = f.x - 38;
+    }
+    ctx.strokeStyle = COL_HOSTILE;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tagX, tagY, 34, 11);
+    ctx.fillStyle = COL_HOSTILE;
+    ctx.font = "9px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(f.trackId || "HOSTILE", tagX + 2, tagY + 9);
+  }
+
   function drawFlyers() {
     var i;
     for (i = 0; i < flyers.length; i++) {
       var f = flyers[i];
       var cx = f.x + f.w * 0.5;
       var cy = f.y + f.h * 0.5;
+      var facing = f.vx >= 0 ? 1 : -1;
+
       if (f.type === FLYER_SAUCER) {
-        ctx.strokeStyle = "#ff66cc";
-        ctx.lineWidth = 1.5;
+        // Flat hexagonal stealth drone
+        ctx.fillStyle = "#121820";
+        ctx.strokeStyle = "#8899aa";
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(f.x, cy);
-        ctx.lineTo(f.x + 3, f.y);
-        ctx.lineTo(f.x + f.w - 3, f.y);
-        ctx.lineTo(f.x + f.w, cy);
-        ctx.lineTo(f.x + f.w - 3, f.y + f.h);
-        ctx.lineTo(f.x + 3, f.y + f.h);
+        ctx.moveTo(cx - 8 * facing, cy);
+        ctx.lineTo(cx - 4 * facing, cy - 3);
+        ctx.lineTo(cx + 4 * facing, cy - 3);
+        ctx.lineTo(cx + 8 * facing, cy);
+        ctx.lineTo(cx + 4 * facing, cy + 3);
+        ctx.lineTo(cx - 4 * facing, cy + 3);
         ctx.closePath();
+        ctx.fill();
         ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(f.x + 4, cy);
-        ctx.lineTo(f.x + f.w - 4, cy);
-        ctx.stroke();
+        ctx.fillStyle = COL_HOSTILE;
+        ctx.fillRect(cx - 1, cy - 1, 2, 2);
       } else {
-        ctx.strokeStyle = "#ff8844";
-        ctx.lineWidth = 1.5;
+        // Sharp dark delta-wing
+        ctx.fillStyle = "#0e141c";
+        ctx.strokeStyle = "#667788";
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(cx, f.y);
-        ctx.lineTo(f.x + f.w, f.y + f.h);
-        ctx.lineTo(f.x + f.w * 0.7, cy);
-        ctx.lineTo(f.x, f.y + f.h);
+        ctx.moveTo(cx + 9 * facing, cy);
+        ctx.lineTo(cx - 7 * facing, cy - 4);
+        ctx.lineTo(cx - 3 * facing, cy);
+        ctx.lineTo(cx - 7 * facing, cy + 4);
         ctx.closePath();
+        ctx.fill();
         ctx.stroke();
+        ctx.fillStyle = COL_HOSTILE;
+        ctx.fillRect(cx + 2 * facing - 1, cy - 1, 2, 2);
       }
+      drawFlyerTag(f);
     }
   }
 
@@ -1015,6 +1071,67 @@
     }
   }
 
+  function drawRadarFrame() {
+    var tick;
+    var step = 20;
+    ctx.strokeStyle = "rgba(100, 140, 200, 0.45)";
+    ctx.fillStyle = "rgba(140, 180, 230, 0.55)";
+    ctx.lineWidth = 1;
+    ctx.font = "7px monospace";
+    ctx.textAlign = "left";
+
+    // Outer monitor frame
+    ctx.strokeStyle = "rgba(80, 120, 180, 0.5)";
+    ctx.strokeRect(0.5, 0.5, W - 1, GROUND_Y - 1);
+
+    // Top / bottom latitude ticks + numbers
+    for (tick = 0; tick <= W; tick += step) {
+      ctx.beginPath();
+      ctx.moveTo(tick, 0);
+      ctx.lineTo(tick, 4);
+      ctx.moveTo(tick, GROUND_Y);
+      ctx.lineTo(tick, GROUND_Y - 4);
+      ctx.stroke();
+      if (tick > 0 && tick < W) {
+        ctx.fillText(String(tick), tick + 1, 9);
+      }
+    }
+
+    // Left / right longitude ticks + numbers
+    ctx.textAlign = "left";
+    for (tick = 0; tick <= GROUND_Y; tick += step) {
+      ctx.beginPath();
+      ctx.moveTo(0, tick);
+      ctx.lineTo(4, tick);
+      ctx.moveTo(W, tick);
+      ctx.lineTo(W - 4, tick);
+      ctx.stroke();
+      if (tick > 8 && tick < GROUND_Y - 4) {
+        ctx.fillText(String(tick), 5, tick + 3);
+      }
+    }
+
+    // Corner crosshairs
+    ctx.strokeStyle = "rgba(0, 220, 255, 0.55)";
+    var corners = [
+      [6, 6],
+      [W - 6, 6],
+      [6, GROUND_Y - 6],
+      [W - 6, GROUND_Y - 6],
+    ];
+    var ci;
+    for (ci = 0; ci < corners.length; ci++) {
+      var cx = corners[ci][0];
+      var cy = corners[ci][1];
+      ctx.beginPath();
+      ctx.moveTo(cx - 4, cy);
+      ctx.lineTo(cx + 4, cy);
+      ctx.moveTo(cx, cy - 4);
+      ctx.lineTo(cx, cy + 4);
+      ctx.stroke();
+    }
+  }
+
   function drawRadarGrid() {
     var g;
     ctx.strokeStyle = COL_GRID;
@@ -1031,6 +1148,7 @@
       ctx.lineTo(W, g);
       ctx.stroke();
     }
+    drawRadarFrame();
   }
 
   function drawBackground() {
@@ -1070,7 +1188,7 @@
       score +
       "   WAVE " +
       wave +
-      "   CITIES " +
+      "   SECTORS " +
       aliveCities() +
       "/" +
       CITY_SLOTS +
@@ -1253,7 +1371,7 @@
     if (reason === "cities") {
       overlayTitle.textContent = "YOU LOST";
       instructionsEl.textContent =
-        "All cities destroyed. Final score: " + score + " — Wave " + wave;
+        "All strategic sectors destroyed. Final score: " + score + " — Wave " + wave;
     } else if (reason === "ammo") {
       overlayTitle.textContent = "GAME OVER";
       instructionsEl.textContent =
@@ -1342,6 +1460,7 @@
     if (btnStart.disabled) {
       return;
     }
+    nextTrackId = 1;
     score = 0;
     wave = 1;
     frame = 0;
