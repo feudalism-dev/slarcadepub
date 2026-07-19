@@ -1345,7 +1345,7 @@
     overlayTitle.textContent = "ALIEN INFESTATION";
     instructionsEl.style.whiteSpace = "";
     instructionsEl.textContent =
-      "True Galaga combat: convoy entry, tractor beams, dual fighter rescue, and Challenging Stages. Arrow keys / A·D move · Space or left-click fire.";
+      "Arrow keys / A·D move · Space or left-click fire. Click the screen once so the HUD can take keyboard focus.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -1529,10 +1529,10 @@
       bannerTimer--;
     }
 
-    if (keys.ArrowLeft || keys.a || keys.A) {
+    if (keys.ArrowLeft || keys.left || keys.a || keys.A) {
       player.x -= player.speed;
     }
-    if (keys.ArrowRight || keys.d || keys.D) {
+    if (keys.ArrowRight || keys.right || keys.d || keys.D) {
       player.x += player.speed;
     }
     var minX = dualFighter ? 22 : 8;
@@ -1543,7 +1543,7 @@
     if (player.x > maxX) {
       player.x = maxX;
     }
-    if (keys[" "] || keys.Spacebar || mouseFire) {
+    if (keys[" "] || keys.Spacebar || keys.Space || keys.shoot || mouseFire) {
       fire();
     }
 
@@ -1684,6 +1684,7 @@
       overlay.classList.add("hidden");
       setOverlayButtons(false, false);
       setQuitVisible(true);
+      grabMediaFocus();
       if (isChallenge) {
         bannerText = "CHALLENGING STAGE";
         bannerTimer = 120;
@@ -2019,30 +2020,153 @@
     }
   }
 
-  window.addEventListener("keydown", function (e) {
-    keys[e.key] = true;
-    if (e.key === " " || e.key === "Spacebar") {
+  // SL CEF often mis-routes keyboard: prefer e.code, bind window+document, force focus on click.
+  var lastDownStamp = -1;
+  var lastDownId = "";
+  var lastUpStamp = -1;
+  var lastUpId = "";
+
+  function grabMediaFocus() {
+    try {
+      if (document.activeElement && document.activeElement.blur) {
+        document.activeElement.blur();
+      }
+      window.focus();
+      if (document.body) {
+        if (!document.body.getAttribute("tabindex")) {
+          document.body.setAttribute("tabindex", "0");
+        }
+        document.body.focus();
+      }
+    } catch (err) {}
+  }
+
+  function setKeyFromEvent(e, isDown) {
+    var code = e.code || "";
+    var key = e.key || "";
+    var kc = e.keyCode || e.which || 0;
+
+    if (
+      code === "ArrowLeft" ||
+      key === "ArrowLeft" ||
+      key === "Left" ||
+      kc === 37
+    ) {
+      keys.ArrowLeft = isDown;
+      keys.left = isDown;
+    }
+    if (
+      code === "ArrowRight" ||
+      key === "ArrowRight" ||
+      key === "Right" ||
+      kc === 39
+    ) {
+      keys.ArrowRight = isDown;
+      keys.right = isDown;
+    }
+    if (
+      code === "ArrowUp" ||
+      key === "ArrowUp" ||
+      key === "Up" ||
+      kc === 38
+    ) {
+      keys.ArrowUp = isDown;
+    }
+    if (
+      code === "ArrowDown" ||
+      key === "ArrowDown" ||
+      key === "Down" ||
+      kc === 40
+    ) {
+      keys.ArrowDown = isDown;
+    }
+    if (code === "Space" || key === " " || key === "Spacebar" || kc === 32) {
+      keys[" "] = isDown;
+      keys.Spacebar = isDown;
+      keys.Space = isDown;
+      keys.shoot = isDown;
+    }
+    if (code === "KeyA" || key === "a" || key === "A" || kc === 65) {
+      keys.a = isDown;
+      keys.A = isDown;
+    }
+    if (code === "KeyD" || key === "d" || key === "D" || kc === 68) {
+      keys.d = isDown;
+      keys.D = isDown;
+    }
+    if (code === "Escape" || key === "Escape" || kc === 27) {
+      keys.Escape = isDown;
+    }
+    if (code === "Enter" || key === "Enter" || kc === 13) {
+      keys.Enter = isDown;
+    }
+  }
+
+  function isGameNavCode(e) {
+    var code = e.code || "";
+    if (
+      code === "Space" ||
+      code === "ArrowUp" ||
+      code === "ArrowDown" ||
+      code === "ArrowLeft" ||
+      code === "ArrowRight"
+    ) {
+      return true;
+    }
+    var kc = e.keyCode || e.which || 0;
+    return kc === 32 || kc === 37 || kc === 38 || kc === 39 || kc === 40;
+  }
+
+  function handleKeyDown(e) {
+    var id = e.code || e.key || String(e.keyCode || e.which || "");
+    if (e.timeStamp === lastDownStamp && id === lastDownId) {
+      return;
+    }
+    lastDownStamp = e.timeStamp;
+    lastDownId = id;
+
+    if (isGameNavCode(e)) {
       e.preventDefault();
+    }
+
+    setKeyFromEvent(e, true);
+
+    if (keys.shoot || keys[" "] || keys.Space) {
       if (phase === PHASE_PLAYING && running) {
         fire();
       }
     }
-    if (e.key === "Escape" && phase !== PHASE_MENU && phase !== PHASE_OVER) {
+    if (keys.Escape && phase !== PHASE_MENU && phase !== PHASE_OVER) {
       quitGame();
     }
     if (
-      (e.key === "Enter" || e.key === " ") &&
+      (keys.Enter || keys.shoot || keys[" "]) &&
       phase === PHASE_DIED &&
       !btnStart.disabled
     ) {
       e.preventDefault();
       continueAfterDeath();
     }
-  });
-  window.addEventListener("keyup", function (e) {
-    keys[e.key] = false;
-  });
+  }
+
+  function handleKeyUp(e) {
+    var id = e.code || e.key || String(e.keyCode || e.which || "");
+    if (e.timeStamp === lastUpStamp && id === lastUpId) {
+      return;
+    }
+    lastUpStamp = e.timeStamp;
+    lastUpId = id;
+    setKeyFromEvent(e, false);
+  }
+
+  window.addEventListener("click", grabMediaFocus);
+  window.addEventListener("keydown", handleKeyDown);
+  window.addEventListener("keyup", handleKeyUp);
+  document.addEventListener("keydown", handleKeyDown);
+  document.addEventListener("keyup", handleKeyUp);
+
   window.addEventListener("mousedown", function (e) {
+    grabMediaFocus();
     if (e.button !== 0) {
       return;
     }
