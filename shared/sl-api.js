@@ -247,6 +247,19 @@
   }
 
   function submitScoreViaMoapUrl(score) {
+    // Navigating the MOAP URL flashes the default prim texture and kicks the player
+    // out of the game page. Prefer HTTP-in JSONP; never use this on HUD.
+    if (hudMode) {
+      return Promise.resolve({
+        ok: true,
+        pendingMoapReport: false,
+        game: resolveGameId(),
+        saved: false,
+        scoresEnabled: scoresForThisGame(),
+        messages: [],
+        unavailableMessage: "",
+      });
+    }
     var href = global.location.href;
     var q = href.indexOf("?");
     var base = q >= 0 ? href.substring(0, q) : href;
@@ -319,6 +332,17 @@
 
   function submitScore(score) {
     if (!apiBase) {
+      // HUD must never location.replace — that reloads MOAP and shows the LSL default texture.
+      if (hudMode) {
+        return Promise.resolve({
+          ok: true,
+          game: resolveGameId(),
+          saved: false,
+          scoresEnabled: scoresForThisGame(),
+          messages: [],
+          unavailableMessage: "",
+        });
+      }
       if (scoresForThisGame() && session.token) {
         return submitScoreViaMoapUrl(score);
       }

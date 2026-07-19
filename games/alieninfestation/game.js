@@ -1933,34 +1933,35 @@
     setStartScreenExtras(false);
     setQuitVisible(false);
 
-    var hudMode = SLArcade.isHudMode();
-    var canEnd = SLArcade.canEndSession() && !hudMode;
     var recoveryTimer = setTimeout(function () {
       if (phase === PHASE_OVER && btnStart.disabled) {
-        enablePlayAgain("Tap PLAY AGAIN to continue.");
+        returnToStartScreen("Tap START to play again.");
       }
     }, 8000);
 
-    function finishGameOver() {
+    function returnToStartScreen(hint) {
       clearTimeout(recoveryTimer);
-      if (canEnd) {
-        btnStart.textContent = "SESSION ENDING…";
-        btnStart.disabled = true;
-        endHintEl.textContent =
-          "Click the arcade cabinet in-world to play again.";
-        setTimeout(function () {
-          SLArcade.endSession().catch(function () {
-            enablePlayAgain("Session could not end — tap PLAY AGAIN.");
-          });
-        }, 2000);
-        return;
+      phase = PHASE_MENU;
+      running = false;
+      playerBullets = [];
+      enemyBullets = [];
+      particles = [];
+      enemies = [];
+      capturedShip = null;
+      dualFighter = false;
+      showMenuOverlay();
+      if (hint) {
+        endHintEl.textContent = hint;
+      } else if (score > 0) {
+        endHintEl.textContent = "Last score: " + score + " — tap START to play again.";
       }
-      enablePlayAgain("Tap PLAY AGAIN for another run.");
+      refreshLeaderboard();
     }
 
     SLArcade.submitScore(score)
       .then(function (result) {
         if (result && result.pendingMoapReport) {
+          // Should not happen on HUD; if a cabinet still navigates, leave page alone.
           return;
         }
         showMessages(result.messages || []);
@@ -1970,12 +1971,13 @@
         }
         return refreshLeaderboard();
       })
-      .then(finishGameOver)
+      .then(function () {
+        returnToStartScreen();
+      })
       .catch(function () {
-        clearTimeout(recoveryTimer);
         unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
         unavailableEl.classList.remove("hidden");
-        enablePlayAgain("Score save timed out — you can still play again.");
+        returnToStartScreen("Score save timed out — tap START to play again.");
       });
   }
 
