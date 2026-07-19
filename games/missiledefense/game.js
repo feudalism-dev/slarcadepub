@@ -350,9 +350,10 @@
     enemyMissiles.push({
       x: sx,
       y: sy,
+      startX: sx,
+      startY: sy,
       vx: (dx / len) * speed,
       vy: (dy / len) * speed,
-      trail: [],
       split: true,
       smart: isSmart,
       targetX: tx,
@@ -429,9 +430,10 @@
     enemyMissiles.push({
       x: f.x,
       y: f.y + f.h * 0.5,
+      startX: f.x,
+      startY: f.y + f.h * 0.5,
       vx: (dx / len) * speed,
       vy: (dy / len) * speed,
-      trail: [],
       split: false,
       smart: false,
       targetX: tx,
@@ -528,9 +530,10 @@
       enemyMissiles.push({
         x: m.x,
         y: m.y,
+        startX: m.x,
+        startY: m.y,
         vx: Math.cos(base) * speed,
         vy: Math.sin(base) * speed,
-        trail: [],
         split: false,
         smart: false,
         targetX: m.targetX,
@@ -669,10 +672,6 @@
             m.vy = (m.vy / nlen) * spd;
           }
         }
-      }
-      m.trail.push({ x: m.x, y: m.y });
-      if (m.trail.length > 10) {
-        m.trail.shift();
       }
       m.x += m.vx;
       m.y += m.vy;
@@ -892,18 +891,23 @@
 
   function drawMissiles() {
     var i;
+    // Inbound: pure kinetic trajectory vectors (start → current), not craft sprites
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "miter";
     for (i = 0; i < enemyMissiles.length; i++) {
       var m = enemyMissiles[i];
-      drawTrail(m.trail, m.smart ? "#ff2200" : "#ff6622", 2);
-      ctx.fillStyle = m.smart ? "#ffee00" : "#ff4422";
-      ctx.fillRect(m.x - 1, m.y - 1, 3, 3);
+      ctx.beginPath();
+      ctx.moveTo(m.startX, m.startY);
+      ctx.lineTo(m.x, m.y);
+      ctx.strokeStyle = m.smart ? "#ff2200" : "#ff6622";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
 
+    // Friendly interceptors: cyan vector trails
     for (i = 0; i < interceptors.length; i++) {
       var p = interceptors[i];
       drawTrail(p.trail, "#00ffcc", 2);
-      ctx.fillStyle = "#7cf5ff";
-      ctx.fillRect(p.x - 1, p.y - 1, 3, 3);
     }
   }
 
