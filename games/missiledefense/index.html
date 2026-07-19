@@ -17,17 +17,17 @@
         background: #020208;
       }
     </style>
-    <link rel="stylesheet" href="style.css?v=1" />
+    <link rel="stylesheet" href="style.css?v=2" />
   </head>
   <body>
     <div id="app">
       <div id="game-wrap">
-        <canvas id="game" width="768" height="640"></canvas>
+        <canvas id="game" width="224" height="288"></canvas>
         <div id="hud"></div>
         <div id="overlay">
           <div>
             <h1 id="overlay-title">SL MISSILE DEFENSE</h1>
-            <p id="instructions">Click or tap to fire interceptors. Bombers from wave 2; bonus saucers from wave 4.</p>
+            <p id="instructions">Click to fire interceptors. Infinite waves. Bonus city every 10,000 pts held in reserve.</p>
             <p id="player-line">Player: …</p>
             <div id="start-scores" class="start-scores">
               <p id="personal-score">Your top score: —</p>
@@ -53,7 +53,7 @@
         <button id="btn-modal-close" type="button">CLOSE</button>
       </div>
     </div>
-    <script src="../../shared/sl-api.js?v=18"></script>
-    <script src="game.js?v=8"></script>
+    <script src="../../shared/sl-api.js?v=19"></script>
+    <script src="game.js?v=9"></script>
   </body>
 </html>

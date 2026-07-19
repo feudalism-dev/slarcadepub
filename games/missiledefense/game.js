@@ -26,9 +26,15 @@
   var instructionsEl = document.getElementById("instructions");
   var endHintEl = document.getElementById("end-hint");
 
-  var W = canvas.width;
-  var H = canvas.height;
-  var GROUND_Y = H - 48;
+  // Fixed vertical arcade frame letterboxed in the square HUD
+  var VIRTUAL_WIDTH = 224;
+  var VIRTUAL_HEIGHT = 288;
+  var W = VIRTUAL_WIDTH;
+  var H = VIRTUAL_HEIGHT;
+  var GROUND_Y = H - 22;
+  var viewScale = 1;
+  var viewOffsetX = 0;
+  var viewOffsetY = 0;
 
   var PHASE_MENU = "menu";
   var PHASE_READY = "ready";
@@ -39,14 +45,18 @@
   var READY_FRAMES = 90;
   var AMMO_PER_BATTERY = 10;
   var CITY_BONUS = 100;
-  var CITY_BONUS_SCORES = [2000, 5000, 10000];
+  var CITY_BONUS_EVERY = 10000;
+  var CITY_SLOTS = 6;
   var KILL_POINTS = 25;
   var SAUCER_POINTS = 125;
   var BOMBER_POINTS = 50;
-  var SPLIT_CHANCE = 0.28;
-  var SPLIT_CHANCE_WAVE1 = 0.1;
-  var EXP_MAX_R = 42;
-  var EXP_GROW = 1.8;
+  var SPLIT_CHANCE_BASE = 0.12;
+  var EXP_MAX_R = 18;
+  var EXP_GROW = 0.85;
+  var MISSILE_SPEED_BASE = 0.42;
+  var MISSILE_SPEED_STEP = 0.055;
+  var MISSILE_SPEED_CAP_WAVE = 6;
+  var INTERCEPTOR_SPEED = 3.6;
 
   var phase = PHASE_MENU;
   var running = false;
@@ -65,15 +75,37 @@
   var waveSpawnsLeft = 0;
   var flyerSpawnsLeft = 0;
   var spawnTimer = 0;
-  var spawnInterval = 55;
+  var spawnInterval = 90;
   var flyerSpawnTimer = 0;
-  var flyerSpawnInterval = 320;
+  var flyerSpawnInterval = 360;
+  var bonusCities = 0;
   var cityBonusesClaimed = 0;
   var bonusFlashTimer = 0;
   var bonusFlashText = "";
 
   var FLYER_SAUCER = "saucer";
   var FLYER_BOMBER = "bomber";
+
+  // Multi-color city silhouette (0 transparent)
+  var CITY_SPRITE = [
+    [0, 0, 1, 1, 0, 0, 2, 2, 0, 0, 1, 1, 0, 0],
+    [0, 1, 1, 1, 1, 0, 2, 2, 0, 1, 1, 1, 1, 0],
+    [1, 1, 3, 1, 1, 1, 2, 2, 1, 1, 3, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 3, 1, 1, 3, 1, 1, 1, 3, 1, 1, 3, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  ];
+  var CITY_PAL = { 1: "#3ec8ff", 2: "#f4f7ff", 3: "#ffe066" };
+
+  var BATTERY_SPRITE = [
+    [0, 0, 0, 4, 4, 0, 0, 0],
+    [0, 0, 4, 4, 4, 4, 0, 0],
+    [0, 1, 1, 4, 4, 1, 1, 0],
+    [1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 2, 1, 1, 1, 1, 2, 1],
+  ];
+  var BATTERY_PAL_OK = { 1: "#00e8a0", 2: "#f4f7ff", 4: "#7cf5ff" };
+  var BATTERY_PAL_EMPTY = { 1: "#445566", 2: "#8899aa", 4: "#556677" };
 
   function setOverlayButtons(showStart, showNext) {
     btnStart.classList.toggle("hidden", !showStart);
@@ -102,6 +134,67 @@
     return Math.sqrt(dx * dx + dy * dy);
   }
 
+  function resizeCanvas() {
+    var displayW = canvas.clientWidth || window.innerWidth || VIRTUAL_WIDTH;
+    var displayH = canvas.clientHeight || window.innerHeight || VIRTUAL_HEIGHT;
+    if (displayW < 1) {
+      displayW = VIRTUAL_WIDTH;
+    }
+    if (displayH < 1) {
+      displayH = VIRTUAL_HEIGHT;
+    }
+    if (canvas.width !== displayW || canvas.height !== displayH) {
+      canvas.width = displayW;
+      canvas.height = displayH;
+    }
+    viewScale = Math.min(displayW / VIRTUAL_WIDTH, displayH / VIRTUAL_HEIGHT);
+    viewOffsetX = (displayW - VIRTUAL_WIDTH * viewScale) / 2;
+    viewOffsetY = (displayH - VIRTUAL_HEIGHT * viewScale) / 2;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, displayW, displayH);
+    ctx.translate(viewOffsetX, viewOffsetY);
+    ctx.scale(viewScale, viewScale);
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth = 1 / viewScale;
+    ctx.strokeRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+  }
+
+  function grabMediaFocus() {
+    try {
+      if (document.activeElement && document.activeElement.blur) {
+        document.activeElement.blur();
+      }
+      window.focus();
+      if (document.body) {
+        if (!document.body.getAttribute("tabindex")) {
+          document.body.setAttribute("tabindex", "0");
+        }
+        document.body.focus();
+      }
+    } catch (err) {}
+  }
+
+  function drawMatrix(matrix, x, y, pixelSize, palette) {
+    var r;
+    var c;
+    for (r = 0; r < matrix.length; r++) {
+      for (c = 0; c < matrix[r].length; c++) {
+        var v = matrix[r][c];
+        if (!v) {
+          continue;
+        }
+        var col = palette[v];
+        if (!col) {
+          continue;
+        }
+        ctx.fillStyle = col;
+        ctx.fillRect(x + c * pixelSize, y + r * pixelSize, pixelSize, pixelSize);
+      }
+    }
+  }
+
   function aliveCities() {
     var n = 0;
     var i;
@@ -123,22 +216,22 @@
   }
 
   function initLayout() {
-    var cityXs = [72, 168, 264, 504, 600, 696];
+    var cityXs = [16, 44, 72, 132, 160, 188];
     var i;
     cities = [];
     for (i = 0; i < cityXs.length; i++) {
       cities.push({
         x: cityXs[i],
-        y: GROUND_Y - 18,
-        w: 36,
-        h: 18,
+        y: GROUND_Y - 12,
+        w: 14,
+        h: 12,
         alive: true,
       });
     }
     batteries = [
-      { x: 384, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY },
-      { x: 120, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY },
-      { x: 648, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY },
+      { x: 112, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY },
+      { x: 32, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY },
+      { x: 192, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY },
     ];
   }
 
@@ -161,17 +254,30 @@
   }
 
   function checkCityBonuses() {
-    var i;
-    for (i = cityBonusesClaimed; i < CITY_BONUS_SCORES.length; i++) {
-      if (score < CITY_BONUS_SCORES[i]) {
-        return;
+    var nextAt = (cityBonusesClaimed + 1) * CITY_BONUS_EVERY;
+    while (score >= nextAt) {
+      cityBonusesClaimed++;
+      bonusCities++;
+      bonusFlashText = "BONUS CITY RESERVE +" + bonusCities + " (" + nextAt + ")";
+      bonusFlashTimer = 150;
+      nextAt = (cityBonusesClaimed + 1) * CITY_BONUS_EVERY;
+      updateHud();
+    }
+  }
+
+  function replenishCitiesFromReserve() {
+    var revived = 0;
+    while (aliveCities() < CITY_SLOTS && bonusCities > 0) {
+      if (!reviveOneCity()) {
+        break;
       }
-      cityBonusesClaimed = i + 1;
-      if (reviveOneCity()) {
-        bonusFlashText = "BONUS CITY — " + CITY_BONUS_SCORES[i] + " pts!";
-        bonusFlashTimer = 150;
-        updateHud();
-      }
+      bonusCities--;
+      revived++;
+    }
+    if (revived > 0) {
+      bonusFlashText = "CITY RESERVE DEPLOYED ×" + revived;
+      bonusFlashTimer = 140;
+      updateHud();
     }
   }
 
@@ -197,19 +303,50 @@
       return alive[Math.floor(Math.random() * alive.length)];
     }
     var b = batteries[Math.floor(Math.random() * batteries.length)];
-    return { x: b.x, y: b.y, w: 8, h: 8, alive: true };
+    return { x: b.x, y: b.y, w: 4, h: 4, alive: true };
+  }
+
+  function cappedMissileSpeed() {
+    var steps = wave - 1;
+    if (steps > MISSILE_SPEED_CAP_WAVE - 1) {
+      steps = MISSILE_SPEED_CAP_WAVE - 1;
+    }
+    return MISSILE_SPEED_BASE + steps * MISSILE_SPEED_STEP + Math.random() * 0.06;
+  }
+
+  function splitChanceForWave() {
+    if (wave <= 1) {
+      return 0.08;
+    }
+    var c = SPLIT_CHANCE_BASE + (wave - 2) * 0.035;
+    if (c > 0.42) {
+      c = 0.42;
+    }
+    return c;
+  }
+
+  function smartChanceForWave() {
+    if (wave < 7) {
+      return 0;
+    }
+    var c = 0.12 + (wave - 7) * 0.04;
+    if (c > 0.45) {
+      c = 0.45;
+    }
+    return c;
   }
 
   function spawnEnemy() {
     var target = pickTarget();
     var tx = target.x + target.w * 0.5;
     var ty = target.y + target.h * 0.5;
-    var sx = 40 + Math.random() * (W - 80);
-    var sy = -8;
+    var sx = 12 + Math.random() * (W - 24);
+    var sy = -6;
     var dx = tx - sx;
     var dy = ty - sy;
     var len = Math.sqrt(dx * dx + dy * dy);
-    var speed = 0.82 + (wave - 1) * 0.08 + Math.random() * 0.15;
+    var speed = cappedMissileSpeed();
+    var isSmart = Math.random() < smartChanceForWave();
     enemyMissiles.push({
       x: sx,
       y: sy,
@@ -217,27 +354,39 @@
       vy: (dy / len) * speed,
       trail: [],
       split: true,
+      smart: isSmart,
+      targetX: tx,
+      targetY: ty,
     });
   }
 
   function maxFlyersForWave() {
-    if (wave < 3) {
+    if (wave < 4) {
       return 0;
     }
-    if (wave < 6) {
+    if (wave < 7) {
       return 1;
     }
-    return 2;
+    if (wave < 11) {
+      return 2;
+    }
+    if (wave < 16) {
+      return 3;
+    }
+    return 4;
   }
 
   function flyerSpawnsForWave() {
-    if (wave < 3) {
+    if (wave < 4) {
       return 0;
     }
-    if (wave < 6) {
+    if (wave < 7) {
       return 1;
     }
-    return 2;
+    if (wave < 11) {
+      return 2;
+    }
+    return Math.min(5, 2 + Math.floor((wave - 11) / 3));
   }
 
   function spawnFlyer() {
@@ -245,22 +394,22 @@
       return false;
     }
     var fromLeft = Math.random() < 0.5;
-    var isSaucer = wave >= 6 && Math.random() < 0.38;
-    var y = 44 + Math.random() * 48;
-    var speed = isSaucer ? 2.1 + wave * 0.05 : 1.0 + wave * 0.04;
+    var isSaucer = wave >= 7 && Math.random() < 0.35;
+    var y = 28 + Math.random() * 36;
+    var speed = isSaucer ? 1.15 + Math.min(0.35, wave * 0.015) : 0.7 + Math.min(0.25, wave * 0.012);
     if (!fromLeft) {
       speed = -speed;
     }
     var flyer = {
       type: isSaucer ? FLYER_SAUCER : FLYER_BOMBER,
-      x: fromLeft ? -28 : W + 28,
+      x: fromLeft ? -20 : W + 20,
       y: y,
       vx: speed,
-      w: isSaucer ? 22 : 26,
-      h: isSaucer ? 10 : 12,
-      dropTimer: 60 + Math.floor(Math.random() * 50),
-      dropInterval: Math.max(90, 150 - wave * 4),
-      dropsLeft: isSaucer ? 0 : Math.min(3, 1 + Math.floor(wave / 4)),
+      w: isSaucer ? 14 : 16,
+      h: isSaucer ? 7 : 8,
+      dropTimer: 50 + Math.floor(Math.random() * 40),
+      dropInterval: Math.max(100, 160 - Math.min(40, wave * 2)),
+      dropsLeft: isSaucer ? 0 : Math.min(4, 1 + Math.floor(wave / 5)),
     };
     flyers.push(flyer);
     return true;
@@ -276,7 +425,7 @@
     if (len < 1) {
       len = 1;
     }
-    var speed = 0.7 + (wave - 1) * 0.06 + Math.random() * 0.12;
+    var speed = cappedMissileSpeed() * 0.9;
     enemyMissiles.push({
       x: f.x,
       y: f.y + f.h * 0.5,
@@ -284,6 +433,9 @@
       vy: (dy / len) * speed,
       trail: [],
       split: false,
+      smart: false,
+      targetX: tx,
+      targetY: ty,
     });
   }
 
@@ -291,7 +443,7 @@
     var f = flyers[i];
     score += f.type === FLYER_SAUCER ? SAUCER_POINTS : BOMBER_POINTS;
     flyers.splice(i, 1);
-    addExplosion(x, y, f.type === FLYER_SAUCER ? 34 : EXP_MAX_R);
+    addExplosion(x, y, f.type === FLYER_SAUCER ? 14 : EXP_MAX_R);
     updateHud();
     checkCityBonuses();
   }
@@ -325,11 +477,11 @@
     b.ammo--;
     var tx = px;
     var ty = py;
-    if (ty > GROUND_Y - 20) {
-      ty = GROUND_Y - 20;
+    if (ty > GROUND_Y - 12) {
+      ty = GROUND_Y - 12;
     }
-    if (ty < 40) {
-      ty = 40;
+    if (ty < 24) {
+      ty = 24;
     }
     var dx = tx - b.x;
     var dy = ty - b.y;
@@ -337,7 +489,7 @@
     if (len < 1) {
       len = 1;
     }
-    var speed = 7.5;
+    var speed = INTERCEPTOR_SPEED;
     interceptors.push({
       x: b.x,
       y: b.y,
@@ -362,9 +514,15 @@
   }
 
   function splitMissile(m) {
-    var angles = [-0.45, 0, 0.45];
+    var angles = [-0.4, 0.4];
+    if (wave >= 9) {
+      angles = [-0.5, 0, 0.5];
+    }
     var i;
-    var speed = Math.sqrt(m.vx * m.vx + m.vy * m.vy) * 1.1;
+    var speed = Math.sqrt(m.vx * m.vx + m.vy * m.vy);
+    if (speed > cappedMissileSpeed() + 0.05) {
+      speed = cappedMissileSpeed() + 0.05;
+    }
     for (i = 0; i < angles.length; i++) {
       var base = Math.atan2(m.vy, m.vx) + angles[i];
       enemyMissiles.push({
@@ -374,6 +532,9 @@
         vy: Math.sin(base) * speed,
         trail: [],
         split: false,
+        smart: false,
+        targetX: m.targetX,
+        targetY: m.targetY,
       });
     }
   }
@@ -381,7 +542,7 @@
   function destroyEnemyAt(i, x, y) {
     var m = enemyMissiles[i];
     score += KILL_POINTS;
-    if (m.split && Math.random() < (wave === 1 ? SPLIT_CHANCE_WAVE1 : SPLIT_CHANCE)) {
+    if (m.split && Math.random() < splitChanceForWave()) {
       splitMissile(m);
     }
     enemyMissiles.splice(i, 1);
@@ -401,9 +562,9 @@
       var j;
       for (j = enemyMissiles.length - 1; j >= 0; j--) {
         var m = enemyMissiles[j];
-        if (dist(m.x, m.y, cx, cy) < 14) {
+        if (dist(m.x, m.y, cx, cy) < 8) {
           cities[i].alive = false;
-          addExplosion(cx, cy, 28);
+          addExplosion(cx, cy, 14);
           enemyMissiles.splice(j, 1);
         }
       }
@@ -494,13 +655,28 @@
     var i;
     for (i = enemyMissiles.length - 1; i >= 0; i--) {
       var m = enemyMissiles[i];
+      if (m.smart) {
+        var tdx = m.targetX - m.x;
+        var tdy = m.targetY - m.y;
+        var tlen = Math.sqrt(tdx * tdx + tdy * tdy);
+        if (tlen > 1) {
+          var spd = Math.sqrt(m.vx * m.vx + m.vy * m.vy);
+          m.vx = m.vx * 0.92 + (tdx / tlen) * spd * 0.08;
+          m.vy = m.vy * 0.92 + (tdy / tlen) * spd * 0.08;
+          var nlen = Math.sqrt(m.vx * m.vx + m.vy * m.vy);
+          if (nlen > 0.01) {
+            m.vx = (m.vx / nlen) * spd;
+            m.vy = (m.vy / nlen) * spd;
+          }
+        }
+      }
       m.trail.push({ x: m.x, y: m.y });
-      if (m.trail.length > 14) {
+      if (m.trail.length > 10) {
         m.trail.shift();
       }
       m.x += m.vx;
       m.y += m.vy;
-      if (m.y > GROUND_Y + 10) {
+      if (m.y > GROUND_Y + 8) {
         enemyMissiles.splice(i, 1);
       }
     }
@@ -508,7 +684,12 @@
   }
 
   function waveEnemyCount() {
-    return 4 + (wave - 1) * 2;
+    // Slow ramp; soft cap — later waves add flyers / splits / smart bombs instead
+    var n = 5 + Math.floor((wave - 1) * 0.55);
+    if (n > 12) {
+      n = 12;
+    }
+    return n;
   }
 
   function checkWaveComplete() {
@@ -574,11 +755,10 @@
         spawnTimer = 0;
         spawnEnemy();
         waveSpawnsLeft--;
-        spawnInterval = Math.max(44, spawnInterval - 1);
       }
     }
 
-    if (wave >= 3 && flyerSpawnsLeft > 0) {
+    if (wave >= 4 && flyerSpawnsLeft > 0) {
       flyerSpawnTimer++;
       if (flyerSpawnTimer >= flyerSpawnInterval) {
         flyerSpawnTimer = 0;
@@ -605,6 +785,7 @@
         overlay.classList.add("hidden");
         setPlayingPointer(true);
         setQuitVisible(true);
+        grabMediaFocus();
       }
       return;
     }
@@ -613,12 +794,13 @@
     }
   }
 
-  function drawTrail(trail, color) {
+  function drawTrail(trail, color, width) {
     if (!trail || trail.length < 2) {
       return;
     }
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = width || 2;
+    ctx.lineCap = "square";
     ctx.beginPath();
     ctx.moveTo(trail[0].x, trail[0].y);
     var i;
@@ -629,7 +811,7 @@
   }
 
   function drawGround() {
-    ctx.strokeStyle = "#3cf";
+    ctx.strokeStyle = "#00e8ff";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, GROUND_Y);
@@ -640,27 +822,21 @@
     for (i = 0; i < cities.length; i++) {
       var c = cities[i];
       if (!c.alive) {
+        ctx.fillStyle = "#1a2030";
+        ctx.fillRect(c.x, GROUND_Y - 2, c.w, 2);
         continue;
       }
-      ctx.fillStyle = "#5ef";
-      ctx.fillRect(c.x, c.y, c.w, c.h);
-      ctx.fillRect(c.x + 6, c.y - 10, 8, 10);
-      ctx.fillRect(c.x + 22, c.y - 14, 8, 14);
+      drawMatrix(CITY_SPRITE, c.x, c.y, 1, CITY_PAL);
     }
 
     for (i = 0; i < batteries.length; i++) {
       var b = batteries[i];
-      ctx.fillStyle = b.ammo > 0 ? "#8ef" : "#444";
-      ctx.beginPath();
-      ctx.moveTo(b.x, b.y);
-      ctx.lineTo(b.x - 10, b.y + 16);
-      ctx.lineTo(b.x + 10, b.y + 16);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#adf";
-      ctx.font = "10px monospace";
+      var pal = b.ammo > 0 ? BATTERY_PAL_OK : BATTERY_PAL_EMPTY;
+      drawMatrix(BATTERY_SPRITE, b.x - 4, b.y - 2, 1, pal);
+      ctx.fillStyle = b.ammo > 0 ? "#7cf5ff" : "#667788";
+      ctx.font = "7px monospace";
       ctx.textAlign = "center";
-      ctx.fillText(String(b.ammo), b.x, b.y + 30);
+      ctx.fillText(String(b.ammo), b.x, b.y + 14);
     }
   }
 
@@ -668,16 +844,23 @@
     var i;
     for (i = 0; i < explosions.length; i++) {
       var e = explosions[i];
-      var alpha = e.growing ? 1 : e.r / e.maxR;
-      ctx.strokeStyle = "rgba(255, 180, 60, " + alpha + ")";
+      var rOuter = Math.max(1, Math.floor(e.r));
+      var rMid = Math.max(1, Math.floor(e.r * 0.65));
+      var rInner = Math.max(1, Math.floor(e.r * 0.3));
+      ctx.strokeStyle = e.growing ? "#ffcc33" : "#ff6622";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+      ctx.arc(e.x, e.y, rOuter, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.strokeStyle = "rgba(255, 240, 120, " + (alpha * 0.6) + ")";
+      ctx.strokeStyle = "#ffe066";
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(e.x, e.y, e.r * 0.55, 0, Math.PI * 2);
+      ctx.arc(e.x, e.y, rMid, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, rInner, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -686,76 +869,70 @@
     for (i = 0; i < flyers.length; i++) {
       var f = flyers[i];
       if (f.type === FLYER_SAUCER) {
-        ctx.fillStyle = "#f6c";
-        ctx.beginPath();
-        ctx.ellipse(f.x + f.w * 0.5, f.y + f.h * 0.45, f.w * 0.5, f.h * 0.45, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#8ef";
-        ctx.fillRect(f.x + f.w * 0.35, f.y + f.h * 0.15, f.w * 0.3, 3);
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(f.x + f.w * 0.42, f.y + f.h * 0.55, 4, 4);
-        ctx.fillRect(f.x + f.w * 0.54, f.y + f.h * 0.55, 4, 4);
+        ctx.fillStyle = "#ff66cc";
+        ctx.fillRect(f.x + 2, f.y + 2, f.w - 4, 3);
+        ctx.fillStyle = "#7cf5ff";
+        ctx.fillRect(f.x, f.y + 4, f.w, 3);
+        ctx.fillStyle = "#f4f7ff";
+        ctx.fillRect(f.x + 3, f.y + 1, 2, 2);
+        ctx.fillRect(f.x + f.w - 5, f.y + 1, 2, 2);
       } else {
-        ctx.fillStyle = "#fa8";
+        ctx.fillStyle = "#ff8844";
         ctx.beginPath();
         ctx.moveTo(f.x + f.w * 0.5, f.y);
         ctx.lineTo(f.x + f.w, f.y + f.h);
         ctx.lineTo(f.x, f.y + f.h);
         ctx.closePath();
         ctx.fill();
-        ctx.fillStyle = "#ffc";
-        ctx.fillRect(f.x + f.w * 0.38, f.y + f.h * 0.55, f.w * 0.24, 3);
+        ctx.fillStyle = "#ffe066";
+        ctx.fillRect(f.x + f.w * 0.35, f.y + f.h * 0.55, f.w * 0.3, 2);
       }
     }
   }
 
   function drawMissiles() {
     var i;
-    ctx.fillStyle = "#f84";
     for (i = 0; i < enemyMissiles.length; i++) {
       var m = enemyMissiles[i];
-      drawTrail(m.trail, "rgba(255, 100, 80, 0.7)");
-      ctx.beginPath();
-      ctx.arc(m.x, m.y, 3, 0, Math.PI * 2);
-      ctx.fill();
+      drawTrail(m.trail, m.smart ? "#ff2200" : "#ff6622", 2);
+      ctx.fillStyle = m.smart ? "#ffee00" : "#ff4422";
+      ctx.fillRect(m.x - 1, m.y - 1, 3, 3);
     }
 
-    ctx.fillStyle = "#8ef";
     for (i = 0; i < interceptors.length; i++) {
       var p = interceptors[i];
-      drawTrail(p.trail, "rgba(120, 220, 255, 0.8)");
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-      ctx.fill();
+      drawTrail(p.trail, "#00ffcc", 2);
+      ctx.fillStyle = "#7cf5ff";
+      ctx.fillRect(p.x - 1, p.y - 1, 3, 3);
     }
   }
 
   function drawBackground() {
-    var g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, "#020818");
-    g.addColorStop(0.55, "#081028");
-    g.addColorStop(1, "#0a0a12");
-    ctx.fillStyle = g;
+    ctx.fillStyle = "#020810";
     ctx.fillRect(0, 0, W, H);
-
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fillStyle = "#f4f7ff";
     var i;
-    for (i = 0; i < 40; i++) {
-      var sx = ((i * 97 + wave * 13) % W);
-      var sy = ((i * 53) % (GROUND_Y - 40));
+    for (i = 0; i < 36; i++) {
+      var sx = (i * 97 + wave * 13) % W;
+      var sy = (i * 53) % (GROUND_Y - 20);
       ctx.fillRect(sx, sy, 1, 1);
     }
   }
 
   function draw() {
+    resizeCanvas();
     drawBackground();
     drawGround();
     drawFlyers();
     drawMissiles();
     drawExplosions();
     if (phase === PHASE_READY && readyTimer > 0) {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
-      ctx.fillRect(0, 0, W, H);
+      // Solid tactical veil (no alpha / blur — CEF-safe)
+      ctx.fillStyle = "#020810";
+      var veilY;
+      for (veilY = 0; veilY < H; veilY += 4) {
+        ctx.fillRect(0, veilY, W, 1);
+      }
     }
   }
 
@@ -773,7 +950,11 @@
       wave +
       "   CITIES " +
       aliveCities() +
-      "/6   AMMO " +
+      "/" +
+      CITY_SLOTS +
+      "   RESERVE " +
+      bonusCities +
+      "   AMMO " +
       totalAmmo();
     if (bonusFlashTimer > 0) {
       line += "   |   " + bonusFlashText;
@@ -785,7 +966,9 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL MISSILE DEFENSE";
     instructionsEl.textContent =
-      "Click or tap to fire interceptors. Clear each wave to advance — bonus cities at 2,000 / 5,000 / 10,000 pts.";
+      "Click to fire interceptors. Infinite waves. Bonus city every " +
+      CITY_BONUS_EVERY +
+      " pts (held in reserve, deployed at wave start).";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -818,7 +1001,13 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "WAVE " + wave + " CLEARED";
     instructionsEl.textContent =
-      "Score: " + score + " (+" + bonus + " city bonus). Ammo refilled.";
+      "Score: " +
+      score +
+      " (+" +
+      bonus +
+      " city bonus). Ammo refilled. City reserve: " +
+      bonusCities +
+      ".";
     endHintEl.textContent = "";
     btnNext.textContent = "NEXT WAVE";
     setOverlayButtons(false, true);
@@ -957,29 +1146,28 @@
     setStartScreenExtras(false);
     setQuitVisible(false);
 
-    var hudMode = SLArcade.isHudMode();
-    var canEnd = SLArcade.canEndSession() && !hudMode;
     var recoveryTimer = setTimeout(function () {
       if (phase === PHASE_OVER && btnStart.disabled) {
-        enablePlayAgain("Tap PLAY AGAIN to continue.");
+        returnToStartScreen("Tap START to play again.");
       }
     }, 8000);
 
-    function finishGameOver() {
+    function returnToStartScreen(hint) {
       clearTimeout(recoveryTimer);
-      if (canEnd) {
-        btnStart.textContent = "SESSION ENDING…";
-        btnStart.disabled = true;
-        endHintEl.textContent =
-          "Click the arcade cabinet in-world to play again.";
-        setTimeout(function () {
-          SLArcade.endSession().catch(function () {
-            enablePlayAgain("Session could not end — tap PLAY AGAIN.");
-          });
-        }, 2000);
-        return;
+      phase = PHASE_MENU;
+      running = false;
+      interceptors = [];
+      explosions = [];
+      enemyMissiles = [];
+      flyers = [];
+      setPlayingPointer(false);
+      showMenuOverlay();
+      if (hint) {
+        endHintEl.textContent = hint;
+      } else if (score > 0) {
+        endHintEl.textContent = "Last score: " + score + " — tap START to play again.";
       }
-      enablePlayAgain("Tap PLAY AGAIN for another run.");
+      refreshLeaderboard();
     }
 
     SLArcade.submitScore(score)
@@ -994,12 +1182,13 @@
         }
         return refreshLeaderboard();
       })
-      .then(finishGameOver)
+      .then(function () {
+        returnToStartScreen();
+      })
       .catch(function () {
-        clearTimeout(recoveryTimer);
         unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
         unavailableEl.classList.remove("hidden");
-        enablePlayAgain("Score save timed out — you can still play again.");
+        returnToStartScreen("Score save timed out — tap START to play again.");
       });
   }
 
@@ -1008,20 +1197,21 @@
     explosions = [];
     enemyMissiles = [];
     flyers = [];
+    replenishCitiesFromReserve();
     waveSpawnsLeft = waveEnemyCount();
     flyerSpawnsLeft = flyerSpawnsForWave();
     spawnTimer = 0;
-    spawnInterval = Math.max(48, 92 - wave * 3);
+    spawnInterval = Math.max(72, 118 - wave * 2);
     flyerSpawnTimer = 0;
-    flyerSpawnInterval = Math.max(300, 460 - wave * 10);
+    flyerSpawnInterval = Math.max(280, 420 - wave * 6);
     updateHud();
     var hint =
-      waveSpawnsLeft + " inbound tracks detected. Click to fire interceptors.";
-    if (wave >= 3) {
+      waveSpawnsLeft + " inbound tracks. Speed capped — later waves add bombers, splits & smart bombs.";
+    if (wave >= 4) {
       hint += " Bombers inbound.";
     }
-    if (wave >= 6) {
-      hint += " Saucers spotted — shoot for bonus points.";
+    if (wave >= 7) {
+      hint += " Saucers & smart bombs active.";
     }
     beginReadyCountdown("WAVE " + wave, hint);
   }
@@ -1033,6 +1223,7 @@
     score = 0;
     wave = 1;
     frame = 0;
+    bonusCities = 0;
     cityBonusesClaimed = 0;
     bonusFlashTimer = 0;
     bonusFlashText = "";
@@ -1077,18 +1268,24 @@
       cx = ev.clientX;
       cy = ev.clientY;
     }
+    var sx = (cx - rect.left) * (canvas.width / rect.width);
+    var sy = (cy - rect.top) * (canvas.height / rect.height);
     return {
-      x: ((cx - rect.left) / rect.width) * W,
-      y: ((cy - rect.top) / rect.height) * H,
+      x: (sx - viewOffsetX) / viewScale,
+      y: (sy - viewOffsetY) / viewScale,
     };
   }
 
   function onFire(ev) {
+    grabMediaFocus();
     if (phase !== PHASE_PLAYING || !running) {
       return;
     }
     ev.preventDefault();
     var p = canvasCoords(ev);
+    if (p.x < 0 || p.x > W || p.y < 0 || p.y > H) {
+      return;
+    }
     fireInterceptor(p.x, p.y);
   }
 
@@ -1099,6 +1296,7 @@
     }
   }
 
+  window.addEventListener("click", grabMediaFocus);
   canvas.addEventListener("mousedown", onFire);
   canvas.addEventListener("touchstart", onFire, { passive: false });
 
