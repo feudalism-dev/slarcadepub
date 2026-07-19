@@ -1166,10 +1166,17 @@
   function showMenuOverlay() {
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SL MISSILE DEFENSE";
-    instructionsEl.textContent =
-      "Command console: click to fire interceptors. Infinite waves. Bonus city every " +
-      CITY_BONUS_EVERY +
-      " pts (held in reserve, deployed at wave start).";
+    if (SLArcade.isHudMode()) {
+      instructionsEl.textContent =
+        "HUD mode: click to fire interceptors. Infinite waves. Bonus sector every " +
+        CITY_BONUS_EVERY +
+        " pts (held in reserve).";
+    } else {
+      instructionsEl.textContent =
+        "Cabinet mode: click the screen to fire. Infinite waves. Bonus sector every " +
+        CITY_BONUS_EVERY +
+        " pts (held in reserve). Touch the prim in-world to start a session.";
+    }
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -1347,9 +1354,15 @@
     setStartScreenExtras(false);
     setQuitVisible(false);
 
+    var hudMode = SLArcade.isHudMode();
+    var canEndCabinet = SLArcade.canEndSession() && !hudMode;
     var recoveryTimer = setTimeout(function () {
       if (phase === PHASE_OVER && btnStart.disabled) {
-        returnToStartScreen("Tap START to play again.");
+        if (hudMode) {
+          returnToStartScreen("Tap START to play again.");
+        } else {
+          enablePlayAgain("Tap PLAY AGAIN, or click the cabinet in-world for a new session.");
+        }
       }
     }, 8000);
 
@@ -1371,6 +1384,29 @@
       refreshLeaderboard();
     }
 
+    function enablePlayAgain(hint) {
+      btnStart.textContent = "PLAY AGAIN";
+      btnStart.disabled = false;
+      endHintEl.textContent = hint || "Tap PLAY AGAIN for another run.";
+    }
+
+    function finishCabinetGameOver() {
+      clearTimeout(recoveryTimer);
+      if (canEndCabinet) {
+        btnStart.textContent = "SESSION ENDING…";
+        btnStart.disabled = true;
+        endHintEl.textContent =
+          "Click the arcade cabinet in-world to play again.";
+        setTimeout(function () {
+          SLArcade.endSession().catch(function () {
+            enablePlayAgain("Session could not end — tap PLAY AGAIN.");
+          });
+        }, 2000);
+        return;
+      }
+      enablePlayAgain("Tap PLAY AGAIN for another run.");
+    }
+
     SLArcade.submitScore(score)
       .then(function (result) {
         if (result && result.pendingMoapReport) {
@@ -1384,12 +1420,21 @@
         return refreshLeaderboard();
       })
       .then(function () {
-        returnToStartScreen();
+        if (hudMode) {
+          returnToStartScreen();
+        } else {
+          finishCabinetGameOver();
+        }
       })
       .catch(function () {
         unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
         unavailableEl.classList.remove("hidden");
-        returnToStartScreen("Score save timed out — tap START to play again.");
+        if (hudMode) {
+          returnToStartScreen("Score save timed out — tap START to play again.");
+        } else {
+          clearTimeout(recoveryTimer);
+          enablePlayAgain("Score save timed out — you can still play again.");
+        }
       });
   }
 
@@ -1457,7 +1502,10 @@
     setPlayingPointer(false);
     showMessages([]);
     showMenuOverlay();
-    SLArcade.endSession().catch(function () {});
+    // Cabinet: free the prim for the next player. HUD: keep session so wearer can replay.
+    if (!SLArcade.isHudMode()) {
+      SLArcade.endSession().catch(function () {});
+    }
   }
 
   function canvasCoords(ev) {
