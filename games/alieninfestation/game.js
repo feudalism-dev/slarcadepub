@@ -56,11 +56,14 @@
   var MAX_SHOTS = 2;
   var MAX_SHOTS_DUAL = 4;
 
-  // Classic Galaga-ish layout: boss / guardian / guardian / drone / drone
-  var ROW_TYPES = [TYPE_BOSS, TYPE_GUARDIAN, TYPE_GUARDIAN, TYPE_DRONE, TYPE_DRONE];
-  var ROW_COLS = [4, 8, 10, 10, 10];
-  var PTS_FORM = [150, 80, 80, 50, 50];
-  var PTS_DIVE = [400, 160, 160, 100, 100];
+  var PTS_FORM_BY_TYPE = [150, 80, 50];
+  var PTS_DIVE_BY_TYPE = [400, 160, 100];
+  var BASE_DIVE_SPEED = 2.4;
+  var SPRITE_PX = 2;
+  var waveConfig = null;
+  var diveChance = 0.55;
+  var maxEnemyBullets = 3;
+  var dronePassFire = false;
 
   var keys = {};
   var mouseFire = false;
@@ -107,10 +110,10 @@
   var convoySide = 0;
 
   var player = {
-    x: W / 2 - 18,
-    y: H - 58,
-    w: 36,
-    h: 30,
+    x: W / 2 - 16,
+    y: H - 56,
+    w: 32,
+    h: 32,
     speed: 6.2,
   };
   var playerBullets = [];
@@ -120,72 +123,169 @@
   var stars = [];
   var capturedShip = null;
 
-  // Classic white fighter with red wing accents
+  // Palette: 0 transparent, 1 white, 2 red, 3 blue, 4 yellow
+  var SPRITE_PALETTE = {
+    1: "#ffffff",
+    2: "#ff0000",
+    3: "#0000ff",
+    4: "#ffff00",
+  };
+  var BOSS_PALETTE_OK = {
+    1: "#ffffff",
+    2: "#ff0000",
+    3: "#00e070",
+    4: "#ffff00",
+  };
+  var BOSS_PALETTE_HURT = {
+    1: "#ffffff",
+    2: "#ff6600",
+    3: "#2244ff",
+    4: "#ffcc00",
+  };
+  var CAPTURED_PALETTE = {
+    1: "#ff4444",
+    2: "#aa0000",
+    3: "#880022",
+    4: "#ffaa00",
+  };
+
   var PLAYER_SHIP = [
-    [0, 0, 0, 0, 1, 0, 0, 0, 0],
-    [0, 0, 0, 1, 1, 1, 0, 0, 0],
-    [0, 0, 1, 1, 1, 1, 1, 0, 0],
-    [0, 2, 0, 1, 1, 1, 0, 2, 0],
-    [2, 1, 1, 1, 1, 1, 1, 1, 2],
-    [2, 0, 1, 0, 0, 0, 1, 0, 2],
-    [0, 0, 1, 0, 0, 0, 1, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 1, 2, 1, 1, 2, 1, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 1, 1, 2, 1, 1, 2, 1, 1, 0, 0, 0, 0],
+    [0, 0, 0, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 0, 0, 0],
+    [0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0],
+    [0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 0],
+    [1, 1, 1, 0, 0, 1, 2, 2, 2, 2, 1, 0, 0, 1, 1, 1],
+    [1, 1, 0, 0, 0, 1, 1, 2, 2, 1, 1, 0, 0, 0, 1, 1],
+    [1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1],
+    [1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1],
+    [0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
   ];
 
   var BOSS_FRAMES = [
     [
-      [0, 0, 1, 0, 0, 0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0, 0, 1, 1, 1, 0],
-      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-      [1, 0, 1, 1, 1, 1, 1, 1, 0, 1],
-      [0, 0, 0, 1, 0, 0, 1, 0, 0, 0],
-      [0, 0, 1, 0, 0, 0, 0, 1, 0, 0],
+      [0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 3, 3, 4, 4, 4, 4, 3, 3, 0, 0, 0, 0],
+      [0, 0, 0, 3, 3, 4, 4, 4, 4, 4, 4, 3, 3, 0, 0, 0],
+      [0, 0, 3, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 0, 0],
+      [0, 3, 3, 1, 3, 4, 4, 4, 4, 4, 4, 3, 1, 3, 3, 0],
+      [0, 3, 1, 1, 3, 3, 4, 4, 4, 4, 3, 3, 1, 1, 3, 0],
+      [3, 3, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 3, 3],
+      [3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3],
+      [3, 0, 0, 3, 3, 4, 4, 4, 4, 4, 4, 3, 3, 0, 0, 3],
+      [3, 0, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 0, 3],
+      [0, 0, 3, 3, 4, 4, 0, 0, 0, 0, 4, 4, 3, 3, 0, 0],
+      [0, 0, 3, 3, 4, 0, 0, 0, 0, 0, 0, 4, 3, 3, 0, 0],
+      [0, 0, 0, 3, 4, 0, 0, 0, 0, 0, 0, 4, 3, 0, 0, 0],
+      [0, 0, 0, 3, 4, 0, 0, 0, 0, 0, 0, 4, 3, 0, 0, 0],
+      [0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 3, 3, 0, 0, 3, 3, 0, 0, 0, 0, 0],
     ],
     [
-      [0, 0, 1, 0, 0, 0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0, 0, 1, 1, 1, 0],
-      [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-      [0, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-      [0, 0, 1, 0, 0, 0, 0, 1, 0, 0],
-      [0, 1, 0, 0, 0, 0, 0, 0, 1, 0],
+      [0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 3, 3, 4, 4, 4, 4, 3, 3, 0, 0, 0, 0],
+      [0, 0, 0, 3, 3, 4, 4, 4, 4, 4, 4, 3, 3, 0, 0, 0],
+      [0, 0, 3, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 0, 0],
+      [0, 3, 3, 1, 3, 4, 4, 4, 4, 4, 4, 3, 1, 3, 3, 0],
+      [3, 3, 1, 1, 3, 3, 4, 4, 4, 4, 3, 3, 1, 1, 3, 3],
+      [3, 3, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 3, 3],
+      [3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3],
+      [0, 3, 0, 3, 3, 4, 4, 4, 4, 4, 4, 3, 3, 0, 3, 0],
+      [0, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 0],
+      [0, 0, 3, 3, 4, 4, 0, 0, 0, 0, 4, 4, 3, 3, 0, 0],
+      [0, 0, 0, 3, 4, 0, 0, 0, 0, 0, 0, 4, 3, 0, 0, 0],
+      [0, 0, 0, 3, 4, 0, 0, 0, 0, 0, 0, 4, 3, 0, 0, 0],
+      [0, 0, 0, 0, 3, 4, 0, 0, 0, 0, 4, 3, 0, 0, 0, 0],
+      [0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0],
     ],
   ];
 
   var GUARDIAN_FRAMES = [
     [
-      [1, 0, 0, 0, 0, 0, 1],
-      [0, 1, 1, 0, 1, 1, 0],
-      [1, 1, 1, 1, 1, 1, 1],
-      [0, 1, 0, 1, 0, 1, 0],
-      [1, 0, 0, 0, 0, 0, 1],
+      [0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0],
+      [0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 0],
+      [2, 2, 2, 2, 2, 0, 0, 1, 1, 0, 0, 2, 2, 2, 2, 2],
+      [2, 2, 1, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 1, 2, 2],
+      [0, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 0],
+      [0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0],
+      [0, 0, 0, 2, 2, 4, 2, 2, 2, 2, 4, 2, 2, 0, 0, 0],
+      [0, 0, 0, 0, 2, 2, 2, 1, 1, 2, 2, 2, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 2, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 2, 2, 2, 1, 1, 2, 2, 2, 0, 0, 0, 0],
+      [0, 0, 0, 2, 2, 0, 2, 2, 2, 2, 0, 2, 2, 0, 0, 0],
+      [0, 0, 2, 2, 0, 0, 0, 2, 2, 0, 0, 0, 2, 2, 0, 0],
+      [0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0],
+      [2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ],
     [
-      [0, 1, 0, 0, 0, 1, 0],
-      [1, 1, 1, 0, 1, 1, 1],
-      [0, 1, 1, 1, 1, 1, 0],
-      [1, 0, 1, 0, 1, 0, 1],
-      [0, 1, 0, 0, 0, 1, 0],
+      [0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0],
+      [0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0],
+      [0, 2, 2, 2, 2, 2, 0, 1, 1, 0, 2, 2, 2, 2, 2, 0],
+      [2, 2, 1, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 1, 2, 2],
+      [2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2],
+      [0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0],
+      [0, 0, 2, 2, 4, 2, 2, 2, 2, 2, 2, 4, 2, 2, 0, 0],
+      [0, 0, 0, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 0, 0, 0],
+      [0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0],
+      [0, 0, 0, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 0, 0, 0],
+      [0, 0, 2, 2, 0, 2, 2, 2, 2, 2, 2, 0, 2, 2, 0, 0],
+      [0, 2, 2, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 2, 2, 0],
+      [2, 2, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 2, 2],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ],
   ];
 
   var DRONE_FRAMES = [
     [
-      [0, 1, 1, 1, 0],
-      [1, 1, 0, 1, 1],
-      [1, 1, 1, 1, 1],
-      [0, 1, 0, 1, 0],
-      [1, 0, 0, 0, 1],
+      [0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 3, 3, 1, 1, 3, 3, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 3, 3, 1, 1, 1, 1, 3, 3, 0, 0, 0, 0],
+      [0, 0, 0, 3, 3, 3, 3, 1, 1, 3, 3, 3, 3, 0, 0, 0],
+      [0, 0, 3, 3, 4, 3, 3, 3, 3, 3, 3, 4, 3, 3, 0, 0],
+      [0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0],
+      [0, 3, 1, 3, 3, 3, 1, 3, 3, 1, 3, 3, 3, 1, 3, 0],
+      [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+      [3, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 3],
+      [0, 0, 0, 3, 3, 0, 3, 3, 3, 3, 0, 3, 3, 0, 0, 0],
+      [0, 0, 3, 3, 0, 0, 0, 3, 3, 0, 0, 0, 3, 3, 0, 0],
+      [0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0],
+      [0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ],
     [
-      [0, 1, 1, 1, 0],
-      [1, 0, 1, 0, 1],
-      [1, 1, 1, 1, 1],
-      [1, 0, 1, 0, 1],
-      [0, 1, 0, 1, 0],
+      [0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 3, 3, 1, 1, 3, 3, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 3, 3, 1, 1, 1, 1, 3, 3, 0, 0, 0, 0],
+      [0, 0, 0, 3, 3, 3, 3, 1, 1, 3, 3, 3, 3, 0, 0, 0],
+      [0, 0, 3, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 0, 0],
+      [0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0],
+      [3, 3, 1, 3, 3, 1, 3, 3, 3, 3, 1, 3, 3, 1, 3, 3],
+      [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+      [0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0],
+      [0, 0, 3, 3, 0, 3, 3, 3, 3, 3, 3, 0, 3, 3, 0, 0],
+      [0, 3, 3, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 3, 3, 0],
+      [3, 3, 0, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 3, 3],
+      [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ],
   ];
 
   var ENEMY_SETS = [BOSS_FRAMES, GUARDIAN_FRAMES, DRONE_FRAMES];
-  var ENEMY_PX = [3, 3, 3];
 
   function initStars() {
     stars = [];
@@ -207,21 +307,27 @@
     return n >= 3 && (n - 3) % 4 === 0;
   }
 
-  function bossColor(hp) {
-    if (hp >= 2) {
-      return "#3dff9a";
+  function enemyPalette(e) {
+    if (e.type === TYPE_BOSS) {
+      if (e.hp >= 2) {
+        return BOSS_PALETTE_OK;
+      }
+      return BOSS_PALETTE_HURT;
     }
-    return "#4a7cff";
+    return SPRITE_PALETTE;
   }
 
-  function enemyColor(e, diving) {
+  function enemyBurstColor(e) {
     if (e.type === TYPE_BOSS) {
-      return bossColor(e.hp);
+      if (e.hp >= 2) {
+        return "#00e070";
+      }
+      return "#2244ff";
     }
     if (e.type === TYPE_GUARDIAN) {
-      return diving ? "#ff7a5c" : "#e83a2e";
+      return "#ff0000";
     }
-    return diving ? "#6cf0ff" : "#2a9fff";
+    return "#0000ff";
   }
 
   function pixelSpriteSize(matrix, pixelSize) {
@@ -236,6 +342,7 @@
   }
 
   function drawMatrix(matrix, x, y, pixelSize, colorMap) {
+    var map = colorMap || SPRITE_PALETTE;
     var r;
     var c;
     for (r = 0; r < matrix.length; r++) {
@@ -244,7 +351,11 @@
         if (!v) {
           continue;
         }
-        ctx.fillStyle = colorMap[v] || colorMap[1];
+        var col = map[v];
+        if (!col) {
+          continue;
+        }
+        ctx.fillStyle = col;
         ctx.fillRect(x + c * pixelSize, y + r * pixelSize, pixelSize, pixelSize);
       }
     }
@@ -256,7 +367,77 @@
   }
 
   function enemySpriteSize(type) {
-    return pixelSpriteSize(ENEMY_SETS[type][0], ENEMY_PX[type]);
+    return pixelSpriteSize(ENEMY_SETS[type][0], SPRITE_PX);
+  }
+
+  function generateWave(waveNumber) {
+    var rows = [];
+    var n = waveNumber;
+    if (n <= 1) {
+      rows = [
+        { type: TYPE_GUARDIAN, cols: 8 },
+        { type: TYPE_DRONE, cols: 10 },
+        { type: TYPE_DRONE, cols: 10 },
+      ];
+    } else if (n === 2) {
+      rows = [
+        { type: TYPE_GUARDIAN, cols: 8 },
+        { type: TYPE_GUARDIAN, cols: 10 },
+        { type: TYPE_DRONE, cols: 10 },
+        { type: TYPE_DRONE, cols: 10 },
+      ];
+    } else if (n <= 4) {
+      rows = [
+        { type: TYPE_BOSS, cols: 2 },
+        { type: TYPE_GUARDIAN, cols: 8 },
+        { type: TYPE_GUARDIAN, cols: 10 },
+        { type: TYPE_DRONE, cols: 10 },
+        { type: TYPE_DRONE, cols: 10 },
+      ];
+    } else if (n <= 8) {
+      rows = [
+        { type: TYPE_BOSS, cols: 4 },
+        { type: TYPE_GUARDIAN, cols: 8 },
+        { type: TYPE_GUARDIAN, cols: 10 },
+        { type: TYPE_DRONE, cols: 10 },
+        { type: TYPE_DRONE, cols: 10 },
+      ];
+    } else {
+      rows = [
+        { type: TYPE_BOSS, cols: 4 },
+        { type: TYPE_GUARDIAN, cols: 10 },
+        { type: TYPE_GUARDIAN, cols: 10 },
+        { type: TYPE_DRONE, cols: 10 },
+        { type: TYPE_DRONE, cols: 10 },
+      ];
+    }
+
+    var diveSpeed = BASE_DIVE_SPEED * (1 + n * 0.08);
+    var maxBullets = 2 + Math.floor((n - 1) / 3);
+    if (maxBullets > 8) {
+      maxBullets = 8;
+    }
+    var chance = 0.4 + n * 0.045;
+    if (chance > 0.92) {
+      chance = 0.92;
+    }
+    var divers = 1 + Math.floor(n / 2);
+    if (divers > 5) {
+      divers = 5;
+    }
+    var diveIv = Math.max(28, 120 - n * 6);
+    var shotIv = Math.max(40, 105 - n * 5);
+
+    return {
+      rows: rows,
+      diveSpeed: diveSpeed,
+      maxEnemyBullets: maxBullets,
+      diveChance: chance,
+      maxDivers: divers,
+      diveInterval: diveIv,
+      enemyShotInterval: shotIv,
+      dronePassFire: n >= 5,
+    };
   }
 
   function spawnBurst(x, y, color, count) {
@@ -277,24 +458,26 @@
     }
   }
 
-  function levelParams() {
-    maxDivers = 1 + Math.floor((level + 1) / 2);
-    if (maxDivers > 5) {
-      maxDivers = 5;
-    }
-    diveInterval = Math.max(36, 115 - level * 7);
-    enemyShotInterval = Math.max(48, 100 - level * 5);
+  function applyWaveConfig(cfg) {
+    waveConfig = cfg;
+    maxDivers = cfg.maxDivers;
+    diveInterval = cfg.diveInterval;
+    enemyShotInterval = cfg.enemyShotInterval;
+    diveChance = cfg.diveChance;
+    maxEnemyBullets = cfg.maxEnemyBullets;
+    dronePassFire = cfg.dronePassFire;
   }
 
-  function buildHomes() {
+  function buildHomes(cfg) {
     var homes = [];
     var row;
     var col;
-    for (row = 0; row < ROW_TYPES.length; row++) {
-      var cols = ROW_COLS[row];
-      var type = ROW_TYPES[row];
+    var rows = cfg.rows;
+    for (row = 0; row < rows.length; row++) {
+      var cols = rows[row].cols;
+      var type = rows[row].type;
       var size = enemySpriteSize(type);
-      var gap = type === TYPE_BOSS ? 70 : type === TYPE_GUARDIAN ? 54 : 50;
+      var gap = type === TYPE_BOSS ? 56 : type === TYPE_GUARDIAN ? 44 : 40;
       var totalW = cols * gap;
       var startX = (W - totalW) / 2 + gap / 2;
       for (col = 0; col < cols; col++) {
@@ -303,7 +486,7 @@
           col: col,
           type: type,
           homeX: startX + col * gap,
-          homeY: 58 + row * 40 + size.h / 2,
+          homeY: 52 + row * 36 + size.h / 2,
           w: size.w,
           h: size.h,
         });
@@ -384,12 +567,13 @@
       h: home.h,
       diveT: 0,
       diveAmp: 2.5 + Math.random() * 2,
-      diveSpeed: 2.7 + level * 0.28,
+      diveSpeed: waveConfig ? waveConfig.diveSpeed : BASE_DIVE_SPEED,
       divePhase: Math.random() * Math.PI * 2,
       path: null,
       tractorT: 0,
       tractorActive: false,
       hasCapture: false,
+      passFired: false,
       challengeGroup: 0,
       challengeT: 0,
       challengePath: null,
@@ -409,7 +593,7 @@
     challengeSpawnT = 0;
     capturedShip = null;
     isChallenge = isChallengeWave(level);
-    levelParams();
+    applyWaveConfig(generateWave(level));
     convoySide = level % 2;
 
     if (isChallenge) {
@@ -418,7 +602,7 @@
       return;
     }
 
-    var homes = buildHomes();
+    var homes = buildHomes(waveConfig);
     var i;
     for (i = 0; i < homes.length; i++) {
       var e = makeEnemy(homes[i], true);
@@ -561,6 +745,9 @@
     if (diversActive() >= maxDivers) {
       return;
     }
+    if (Math.random() > diveChance) {
+      return;
+    }
     var candidates = formationCandidates();
     if (!candidates.length) {
       return;
@@ -580,30 +767,48 @@
       var c = candidates.splice(idx, 1)[0];
       picked.push(c);
     }
+    var baseSp = waveConfig ? waveConfig.diveSpeed : BASE_DIVE_SPEED;
     var i;
     for (i = 0; i < picked.length; i++) {
       var e = picked[i];
       e.mode = MODE_DIVING;
       e.diveT = 0;
-      e.diveSpeed = 2.6 + level * 0.25 + Math.random() * 0.8;
+      e.diveSpeed = baseSp + Math.random() * 0.7;
       e.diveAmp = 2.2 + Math.random() * 2.4;
       e.divePhase = Math.random() * Math.PI * 2;
       e.tractorActive = false;
       e.tractorT = 0;
+      e.passFired = false;
       if (
         e.type === TYPE_BOSS &&
         !e.hasCapture &&
         !capturedShip &&
         !dualFighter &&
-        Math.random() < 0.32
+        Math.random() < 0.35
       ) {
         e.mode = MODE_TRACTOR;
       }
     }
   }
 
+  function fireEnemyBullet(s) {
+    if (enemyBullets.length >= maxEnemyBullets) {
+      return;
+    }
+    enemyBullets.push({
+      x: s.x - 2,
+      y: s.y + s.h / 2,
+      w: 4,
+      h: 11,
+      vy: 3.4 + level * 0.18,
+    });
+  }
+
   function tryEnemyShot() {
     if (isChallenge) {
+      return;
+    }
+    if (enemyBullets.length >= maxEnemyBullets) {
       return;
     }
     var shooters = [];
@@ -615,21 +820,14 @@
       }
       if (e.mode === MODE_DIVING || e.mode === MODE_TRACTOR) {
         shooters.push(e);
-      } else if (e.mode === MODE_FORMATION && Math.random() < 0.15) {
+      } else if (e.mode === MODE_FORMATION && Math.random() < 0.12) {
         shooters.push(e);
       }
     }
     if (!shooters.length) {
       return;
     }
-    var s = shooters[Math.floor(Math.random() * shooters.length)];
-    enemyBullets.push({
-      x: s.x - 2,
-      y: s.y + s.h / 2,
-      w: 4,
-      h: 11,
-      vy: 3.5 + level * 0.2,
-    });
+    fireEnemyBullet(shooters[Math.floor(Math.random() * shooters.length)]);
   }
 
   function updateEntering(e) {
@@ -676,6 +874,15 @@
       e.homeX +
       Math.sin(e.diveT / 6.5 + e.divePhase) * (28 + e.diveAmp * 10) +
       Math.sin(e.diveT / 18) * 12;
+    if (
+      dronePassFire &&
+      e.type === TYPE_DRONE &&
+      !e.passFired &&
+      Math.abs(e.y - player.y) < 18
+    ) {
+      e.passFired = true;
+      fireEnemyBullet(e);
+    }
     if (e.y > H + 40) {
       if (e.hasCapture && capturedShip && capturedShip.bossId === e.id) {
         destroyCapturedShip(false);
@@ -685,6 +892,7 @@
       e.y = -30;
       e.x = e.homeX;
       e.tractorActive = false;
+      e.passFired = false;
     }
   }
 
@@ -706,16 +914,10 @@
     if (!capturedShip) {
       return;
     }
-    var boss = findEnemyById(capturedShip.bossId);
-    if (!boss || !boss.alive) {
-      return;
-    }
-    capturedShip.x = boss.x;
-    capturedShip.y = boss.y + boss.h * 0.85;
     if (capturedShip.state === "falling") {
       capturedShip.fallT++;
       capturedShip.y += 4.5;
-      capturedShip.x += (player.x + player.w / 2 - capturedShip.x) * 0.04;
+      capturedShip.x += (player.x + player.w / 2 - capturedShip.x) * 0.05;
       if (capturedShip.y >= player.y - 8) {
         dualFighter = true;
         capturedShip = null;
@@ -725,7 +927,15 @@
         bonusFlashTimer = 120;
         spawnBurst(player.x + player.w / 2, player.y, "#fff", 20);
       }
+      return;
     }
+    var boss = findEnemyById(capturedShip.bossId);
+    if (!boss || !boss.alive) {
+      destroyCapturedShip(false);
+      return;
+    }
+    capturedShip.x = boss.x;
+    capturedShip.y = boss.y + boss.h * 0.9;
   }
 
   function findEnemyById(id) {
@@ -742,30 +952,33 @@
     if (capturedShip || dualFighter) {
       return;
     }
+    // Kidnap: ship turns enemy-red and orbits the boss — not a collision death
     capturedShip = {
       bossId: boss.id,
       x: player.x + player.w / 2,
       y: player.y,
       state: "orbit",
       fallT: 0,
-      w: 28,
-      h: 24,
+      w: 32,
+      h: 32,
     };
     boss.hasCapture = true;
     boss.tractorActive = false;
     boss.mode = MODE_DIVING;
     boss.diveT = 0;
     lives--;
+    dualFighter = false;
+    playerBullets = [];
     updateHud();
-    spawnBurst(player.x + player.w / 2, player.y, "#f66", 18);
+    spawnBurst(player.x + player.w / 2, player.y, "#66ffcc", 18);
     bannerText = "FIGHTER CAPTURED!";
-    bannerTimer = 100;
+    bannerTimer = 110;
     if (lives <= 0) {
       gameOver();
       return;
     }
     player.x = W / 2 - player.w / 2;
-    playerInvuln = RESPAWN_FRAMES;
+    playerInvuln = RESPAWN_FRAMES + 30;
   }
 
   function releaseCapture(boss) {
@@ -778,6 +991,8 @@
     boss.hasCapture = false;
     capturedShip.state = "falling";
     capturedShip.fallT = 0;
+    capturedShip.x = boss.x;
+    capturedShip.y = boss.y + boss.h * 0.9;
     score += 1000;
     updateHud();
   }
@@ -835,7 +1050,10 @@
         continue;
       }
       var px = player.x + player.w / 2;
-      if (Math.abs(px - e.x) < 36 && player.y > e.y && player.y < H - 20) {
+      var py = player.y + player.h / 2;
+      var inBeamX = Math.abs(px - e.x) < 38;
+      var inBeamY = py > e.y + e.h * 0.3 && py < H - 10;
+      if (inBeamX && inBeamY) {
         startCapture(e);
         return;
       }
@@ -1071,7 +1289,7 @@
   }
 
   function checkPlayerHit() {
-    if (playerInvuln > 0 || isChallenge) {
+    if (playerInvuln > 0 || isChallenge || capturedShip) {
       return;
     }
     var boxes = playerHitboxes();
@@ -1084,7 +1302,12 @@
         if (!e.alive) {
           continue;
         }
-        if (e.mode === MODE_ENTERING || e.mode === MODE_FORMATION) {
+        // Tractor bosses kidnap via checkTractorHit — never treat as lethal contact
+        if (
+          e.mode === MODE_ENTERING ||
+          e.mode === MODE_FORMATION ||
+          e.mode === MODE_TRACTOR
+        ) {
           continue;
         }
         var box = { x: e.x - e.w / 2, y: e.y - e.h / 2, w: e.w, h: e.h };
@@ -1111,16 +1334,16 @@
       return false;
     }
     e.alive = false;
-    spawnBurst(e.x, e.y, enemyColor(e, true), 16);
+    spawnBurst(e.x, e.y, enemyBurstColor(e), 16);
     shotsHit++;
     var pts;
     if (isChallenge) {
       pts = 100 + e.type * 50;
       challengeHits++;
     } else if (diving) {
-      pts = PTS_DIVE[e.row] || 100;
+      pts = PTS_DIVE_BY_TYPE[e.type] || 100;
     } else {
-      pts = PTS_FORM[e.row] || 50;
+      pts = PTS_FORM_BY_TYPE[e.type] || 50;
     }
     if (e.hasCapture) {
       releaseCapture(e);
@@ -1519,53 +1742,39 @@
     if (playerInvuln > 0 && Math.floor(playerInvuln / 5) % 2 === 0) {
       return;
     }
-    var map = { 1: "#f4f7ff", 2: "#ff2a3a" };
     var cx = player.x + player.w / 2;
     var cy = player.y + player.h / 2;
     if (dualFighter) {
-      drawMatrixCentered(PLAYER_SHIP, cx - 18, cy, 3, map);
-      drawMatrixCentered(PLAYER_SHIP, cx + 18, cy, 3, map);
-      ctx.fillStyle = "#9cf";
-      ctx.fillRect(cx - 19, player.y - 4, 2, 4);
-      ctx.fillRect(cx + 17, player.y - 4, 2, 4);
+      drawMatrixCentered(PLAYER_SHIP, cx - 18, cy, SPRITE_PX, SPRITE_PALETTE);
+      drawMatrixCentered(PLAYER_SHIP, cx + 18, cy, SPRITE_PX, SPRITE_PALETTE);
     } else {
-      drawMatrixCentered(PLAYER_SHIP, cx, cy, 3.5, map);
-      ctx.fillStyle = "#9cf";
-      ctx.fillRect(cx - 1, player.y - 5, 2, 4);
+      drawMatrixCentered(PLAYER_SHIP, cx, cy, SPRITE_PX, SPRITE_PALETTE);
     }
   }
 
   function drawEnemy(e) {
     var frames = ENEMY_SETS[e.type];
-    var fi = Math.floor(animFrame / 18) % 2;
+    var fi = Math.floor(animFrame / 18) % frames.length;
     var matrix = frames[fi];
-    var px = ENEMY_PX[e.type];
-    var diving =
-      e.mode === MODE_DIVING ||
-      e.mode === MODE_RETURNING ||
-      e.mode === MODE_TRACTOR ||
-      e.mode === MODE_ENTERING ||
-      e.mode === MODE_CHALLENGE;
-    var color = enemyColor(e, diving);
-    drawMatrixCentered(matrix, e.x, e.y, px, { 1: color });
+    drawMatrixCentered(matrix, e.x, e.y, SPRITE_PX, enemyPalette(e));
 
     if (e.mode === MODE_TRACTOR && e.tractorActive) {
       var beamH = H - e.y - 40;
       var spin = animFrame * 0.25;
       var k;
       ctx.save();
-      for (k = 0; k < 6; k++) {
-        var a = spin + (k * Math.PI) / 3;
-        var ox = Math.cos(a) * 10;
-        ctx.strokeStyle = "rgba(120,255,220," + (0.25 + (k % 2) * 0.2) + ")";
+      for (k = 0; k < 8; k++) {
+        var a = spin + (k * Math.PI) / 4;
+        var ox = Math.cos(a) * 14;
+        ctx.strokeStyle = "rgba(80,255,210," + (0.3 + (k % 2) * 0.25) + ")";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(e.x + ox, e.y + e.h / 2);
-        ctx.lineTo(e.x + ox * 2.2, e.y + beamH);
+        ctx.moveTo(e.x + ox * 0.4, e.y + e.h / 2);
+        ctx.lineTo(e.x + ox, e.y + beamH);
         ctx.stroke();
       }
-      ctx.fillStyle = "rgba(80,255,200,0.08)";
-      ctx.fillRect(e.x - 34, e.y + e.h / 2, 68, beamH);
+      ctx.fillStyle = "rgba(60,255,200,0.12)";
+      ctx.fillRect(e.x - 38, e.y + e.h / 2, 76, beamH);
       ctx.restore();
     }
   }
@@ -1574,13 +1783,12 @@
     if (!capturedShip) {
       return;
     }
-    var map = { 1: "#ff4455", 2: "#aa2233" };
     drawMatrixCentered(
       PLAYER_SHIP,
       capturedShip.x,
       capturedShip.y,
-      2.8,
-      map
+      SPRITE_PX,
+      CAPTURED_PALETTE
     );
   }
 
