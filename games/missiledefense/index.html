@@ -11,18 +11,27 @@
       #app {
         position: fixed;
         inset: 0;
-        width: 100%;
-        height: 100%;
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        padding: 0;
         overflow: hidden;
-        background: #020208;
+        background: #050a12;
+      }
+      #game {
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        padding: 0;
+        display: block;
       }
     </style>
-    <link rel="stylesheet" href="style.css?v=3" />
+    <link rel="stylesheet" href="style.css?v=4" />
   </head>
   <body>
     <div id="app">
       <div id="game-wrap">
-        <canvas id="game" width="224" height="288"></canvas>
+        <canvas id="game" width="600" height="600"></canvas>
         <div id="hud"></div>
         <div id="overlay">
           <div>
@@ -54,6 +63,6 @@
       </div>
     </div>
     <script src="../../shared/sl-api.js?v=19"></script>
-    <script src="game.js?v=13"></script>
+    <script src="game.js?v=14"></script>
   </body>
 </html>

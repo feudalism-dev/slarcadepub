@@ -26,15 +26,13 @@
   var instructionsEl = document.getElementById("instructions");
   var endHintEl = document.getElementById("end-hint");
 
-  // Fixed vertical arcade frame letterboxed in the square HUD
-  var VIRTUAL_WIDTH = 224;
-  var VIRTUAL_HEIGHT = 288;
-  var W = VIRTUAL_WIDTH;
-  var H = VIRTUAL_HEIGHT;
-  var GROUND_Y = H - 22;
-  var viewScale = 1;
-  var viewOffsetX = 0;
-  var viewOffsetY = 0;
+  // Full-bleed 600×600 world — scaled to fill the entire canvas (no letterbox bars)
+  var WORLD = 600;
+  var W = WORLD;
+  var H = WORLD;
+  var GROUND_Y = H - 50;
+  var scaleX = 1;
+  var scaleY = 1;
 
   var PHASE_MENU = "menu";
   var PHASE_READY = "ready";
@@ -51,12 +49,12 @@
   var SAUCER_POINTS = 125;
   var BOMBER_POINTS = 50;
   var SPLIT_CHANCE_BASE = 0.12;
-  var EXP_MAX_R = 22;
-  var EXP_GROW = 0.9;
-  var MISSILE_SPEED_BASE = 0.42;
-  var MISSILE_SPEED_STEP = 0.055;
+  var EXP_MAX_R = 55;
+  var EXP_GROW = 2.2;
+  var MISSILE_SPEED_BASE = 1.1;
+  var MISSILE_SPEED_STEP = 0.14;
   var MISSILE_SPEED_CAP_WAVE = 6;
-  var INTERCEPTOR_SPEED = 3.6;
+  var INTERCEPTOR_SPEED = 9.5;
 
   var phase = PHASE_MENU;
   var running = false;
@@ -131,30 +129,26 @@
   }
 
   function resizeCanvas() {
-    var displayW = canvas.clientWidth || window.innerWidth || VIRTUAL_WIDTH;
-    var displayH = canvas.clientHeight || window.innerHeight || VIRTUAL_HEIGHT;
+    var displayW = window.innerWidth || canvas.clientWidth || WORLD;
+    var displayH = window.innerHeight || canvas.clientHeight || WORLD;
     if (displayW < 1) {
-      displayW = VIRTUAL_WIDTH;
+      displayW = WORLD;
     }
     if (displayH < 1) {
-      displayH = VIRTUAL_HEIGHT;
+      displayH = WORLD;
     }
     if (canvas.width !== displayW || canvas.height !== displayH) {
       canvas.width = displayW;
       canvas.height = displayH;
     }
-    viewScale = Math.min(displayW / VIRTUAL_WIDTH, displayH / VIRTUAL_HEIGHT);
-    viewOffsetX = (displayW - VIRTUAL_WIDTH * viewScale) / 2;
-    viewOffsetY = (displayH - VIRTUAL_HEIGHT * viewScale) / 2;
+    scaleX = canvas.width / WORLD;
+    scaleY = canvas.height / WORLD;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = "#000000";
+    ctx.fillStyle = "#050a12";
     ctx.fillRect(0, 0, displayW, displayH);
-    ctx.translate(viewOffsetX, viewOffsetY);
-    ctx.scale(viewScale, viewScale);
-    ctx.strokeStyle = "#111111";
-    ctx.lineWidth = 1 / viewScale;
-    ctx.strokeRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+    // Stretch world 600×600 across the full canvas — no side letterbox panels
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
   }
 
   function grabMediaFocus() {
@@ -193,25 +187,25 @@
   }
 
   function initLayout() {
-    var cityXs = [16, 44, 72, 132, 160, 188];
+    var cityXs = [55, 130, 205, 370, 445, 520];
     var i;
     cities = [];
     for (i = 0; i < cityXs.length; i++) {
       var sid = i + 1;
       cities.push({
         x: cityXs[i],
-        y: GROUND_Y - 12,
-        w: 14,
-        h: 12,
+        y: GROUND_Y - 36,
+        w: 38,
+        h: 34,
         alive: true,
         sectorId: "N-" + (sid < 10 ? "0" : "") + sid,
         label: "SECTOR",
       });
     }
     batteries = [
-      { x: 112, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY, callsign: "BAT-C" },
-      { x: 32, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY, callsign: "BAT-L" },
-      { x: 192, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY, callsign: "BAT-R" },
+      { x: 300, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY, callsign: "BAT-C" },
+      { x: 85, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY, callsign: "BAT-L" },
+      { x: 515, y: GROUND_Y, ammo: AMMO_PER_BATTERY, maxAmmo: AMMO_PER_BATTERY, callsign: "BAT-R" },
     ];
   }
 
@@ -320,8 +314,8 @@
     var target = pickTarget();
     var tx = target.x + target.w * 0.5;
     var ty = target.y + target.h * 0.5;
-    var sx = 12 + Math.random() * (W - 24);
-    var sy = -6;
+    var sx = 30 + Math.random() * (W - 60);
+    var sy = -12;
     var dx = tx - sx;
     var dy = ty - sy;
     var len = Math.sqrt(dx * dx + dy * dy);
@@ -376,8 +370,8 @@
     }
     var fromLeft = Math.random() < 0.5;
     var isSaucer = wave >= 7 && Math.random() < 0.35;
-    var y = 28 + Math.random() * 36;
-    var speed = isSaucer ? 1.15 + Math.min(0.35, wave * 0.015) : 0.7 + Math.min(0.25, wave * 0.012);
+    var y = 70 + Math.random() * 90;
+    var speed = isSaucer ? 2.8 + Math.min(0.9, wave * 0.04) : 1.7 + Math.min(0.65, wave * 0.03);
     if (!fromLeft) {
       speed = -speed;
     }
@@ -387,11 +381,11 @@
     }
     var flyer = {
       type: isSaucer ? FLYER_SAUCER : FLYER_BOMBER,
-      x: fromLeft ? -20 : W + 20,
+      x: fromLeft ? -40 : W + 40,
       y: y,
       vx: speed,
-      w: isSaucer ? 16 : 18,
-      h: isSaucer ? 8 : 7,
+      w: isSaucer ? 40 : 44,
+      h: isSaucer ? 18 : 16,
       dropTimer: 50 + Math.floor(Math.random() * 40),
       dropInterval: Math.max(100, 160 - Math.min(40, wave * 2)),
       dropsLeft: isSaucer ? 0 : Math.min(4, 1 + Math.floor(wave / 5)),
@@ -430,7 +424,7 @@
     var f = flyers[i];
     score += f.type === FLYER_SAUCER ? SAUCER_POINTS : BOMBER_POINTS;
     flyers.splice(i, 1);
-    addExplosion(x, y, f.type === FLYER_SAUCER ? 14 : EXP_MAX_R);
+    addExplosion(x, y, f.type === FLYER_SAUCER ? 36 : EXP_MAX_R);
     updateHud();
     checkCityBonuses();
   }
@@ -464,11 +458,11 @@
     b.ammo--;
     var tx = px;
     var ty = py;
-    if (ty > GROUND_Y - 12) {
-      ty = GROUND_Y - 12;
+    if (ty > GROUND_Y - 30) {
+      ty = GROUND_Y - 30;
     }
-    if (ty < 24) {
-      ty = 24;
+    if (ty < 50) {
+      ty = 50;
     }
     var dx = tx - b.x;
     var dy = ty - b.y;
@@ -550,9 +544,9 @@
       var j;
       for (j = enemyMissiles.length - 1; j >= 0; j--) {
         var m = enemyMissiles[j];
-        if (dist(m.x, m.y, cx, cy) < 8) {
+        if (dist(m.x, m.y, cx, cy) < 22) {
           cities[i].alive = false;
-          addExplosion(cx, cy, 14);
+          addExplosion(cx, cy, 36);
           enemyMissiles.splice(j, 1);
         }
       }
@@ -613,7 +607,7 @@
           f.dropTimer = f.dropInterval;
         }
       }
-      if (f.x < -40 || f.x > W + 40) {
+      if (f.x < -60 || f.x > W + 60) {
         flyers.splice(i, 1);
       }
     }
@@ -800,10 +794,10 @@
     ctx.translate(x, y);
     ctx.rotate(ang);
     ctx.beginPath();
-    ctx.moveTo(4, 0);
-    ctx.lineTo(-2.5, 2.5);
-    ctx.lineTo(-1, 0);
-    ctx.lineTo(-2.5, -2.5);
+    ctx.moveTo(8, 0);
+    ctx.lineTo(-5, 5);
+    ctx.lineTo(-2, 0);
+    ctx.lineTo(-5, -5);
     ctx.closePath();
     ctx.fillStyle = fillColor;
     ctx.fill();
@@ -815,73 +809,65 @@
     var y = c.y;
     var w = c.w;
     var h = c.h;
+    var roof = y + Math.floor(h * 0.28);
     // Dark cyan body fill
     ctx.fillStyle = COL_CITY_FILL;
     ctx.beginPath();
     ctx.moveTo(x, y + h);
-    ctx.lineTo(x, y + 4);
-    ctx.lineTo(x + 3, y + 4);
-    ctx.lineTo(x + 3, y);
-    ctx.lineTo(x + 6, y);
-    ctx.lineTo(x + 6, y + 4);
-    ctx.lineTo(x + 8, y + 4);
-    ctx.lineTo(x + 8, y + 1);
-    ctx.lineTo(x + 11, y + 1);
-    ctx.lineTo(x + 11, y + 4);
-    ctx.lineTo(x + w, y + 4);
+    ctx.lineTo(x, roof);
+    ctx.lineTo(x + w * 0.22, roof);
+    ctx.lineTo(x + w * 0.22, y);
+    ctx.lineTo(x + w * 0.42, y);
+    ctx.lineTo(x + w * 0.42, roof);
+    ctx.lineTo(x + w * 0.55, roof);
+    ctx.lineTo(x + w * 0.55, y + h * 0.08);
+    ctx.lineTo(x + w * 0.78, y + h * 0.08);
+    ctx.lineTo(x + w * 0.78, roof);
+    ctx.lineTo(x + w, roof);
     ctx.lineTo(x + w, y + h);
     ctx.closePath();
     ctx.fill();
-    // Sharp cyan instrumentation outline
     ctx.strokeStyle = COL_CITY;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
-    // Active grid lights / windows
-    ctx.fillStyle = "#ffe066";
-    ctx.fillRect(x + 2, y + 6, 1, 1);
-    ctx.fillRect(x + 4, y + 6, 1, 1);
-    ctx.fillRect(x + 2, y + 8, 1, 1);
-    ctx.fillRect(x + 4, y + 9, 1, 1);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(x + 9, y + 6, 1, 1);
-    ctx.fillRect(x + 11, y + 6, 1, 1);
-    ctx.fillRect(x + 9, y + 8, 1, 1);
-    ctx.fillRect(x + 11, y + 9, 1, 1);
-    ctx.fillStyle = "#7cf5ff";
-    ctx.fillRect(x + 5, y + 2, 1, 1);
-    ctx.fillRect(x + 9, y + 3, 1, 1);
+    // Window grid lights
+    var wx;
+    var wy;
+    for (wy = roof + 4; wy < y + h - 3; wy += 5) {
+      for (wx = x + 4; wx < x + w - 3; wx += 5) {
+        ctx.fillStyle = (wx + wy) % 10 < 5 ? "#ffe066" : "#ffffff";
+        ctx.fillRect(wx, wy, 2, 2);
+      }
+    }
   }
 
   function drawTurret(b) {
     var armed = b.ammo > 0;
-    // Solid military slate core
     ctx.fillStyle = COL_TURRET_FILL;
     ctx.beginPath();
-    ctx.moveTo(b.x, b.y - 6);
-    ctx.lineTo(b.x + 7, b.y + 2);
-    ctx.lineTo(b.x + 5, b.y + 8);
-    ctx.lineTo(b.x - 5, b.y + 8);
-    ctx.lineTo(b.x - 7, b.y + 2);
+    ctx.moveTo(b.x, b.y - 16);
+    ctx.lineTo(b.x + 18, b.y + 4);
+    ctx.lineTo(b.x + 12, b.y + 20);
+    ctx.lineTo(b.x - 12, b.y + 20);
+    ctx.lineTo(b.x - 18, b.y + 4);
     ctx.closePath();
     ctx.fill();
-    // Tight cyan instrumentation edge
     ctx.strokeStyle = armed ? COL_TURRET : COL_TURRET_EMPTY;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
-    // Barrel assembly
     ctx.fillStyle = COL_TURRET_FILL;
     ctx.beginPath();
-    ctx.moveTo(b.x - 1, b.y - 6);
-    ctx.lineTo(b.x, b.y - 13);
-    ctx.lineTo(b.x + 3, b.y - 10);
-    ctx.lineTo(b.x + 1, b.y - 6);
+    ctx.moveTo(b.x - 3, b.y - 16);
+    ctx.lineTo(b.x, b.y - 34);
+    ctx.lineTo(b.x + 8, b.y - 26);
+    ctx.lineTo(b.x + 3, b.y - 16);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = armed ? COL_INTERCEPT : "#668899";
-    ctx.font = "7px monospace";
+    ctx.font = "14px monospace";
     ctx.textAlign = "center";
-    ctx.fillText(String(b.ammo), b.x, b.y + 16);
+    ctx.fillText(String(b.ammo), b.x, b.y + 38);
   }
 
   function drawGround() {
@@ -949,18 +935,18 @@
     if (!flash) {
       return;
     }
-    var tagX = f.x + f.w + 2;
-    var tagY = f.y - 2;
-    if (tagX > W - 36) {
-      tagX = f.x - 38;
+    var tagX = f.x + f.w + 4;
+    var tagY = f.y - 4;
+    if (tagX > W - 70) {
+      tagX = f.x - 72;
     }
     ctx.strokeStyle = COL_HOSTILE;
     ctx.lineWidth = 1;
-    ctx.strokeRect(tagX, tagY, 34, 11);
+    ctx.strokeRect(tagX, tagY, 66, 16);
     ctx.fillStyle = COL_HOSTILE;
-    ctx.font = "9px monospace";
+    ctx.font = "12px monospace";
     ctx.textAlign = "left";
-    ctx.fillText(f.trackId || "HOSTILE", tagX + 2, tagY + 9);
+    ctx.fillText(f.trackId || "HOSTILE", tagX + 4, tagY + 12);
   }
 
   function drawFlyers() {
@@ -972,37 +958,35 @@
       var facing = f.vx >= 0 ? 1 : -1;
 
       if (f.type === FLYER_SAUCER) {
-        // Flat hexagonal stealth drone
         ctx.fillStyle = "#121820";
         ctx.strokeStyle = "#8899aa";
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(cx - 8 * facing, cy);
-        ctx.lineTo(cx - 4 * facing, cy - 3);
-        ctx.lineTo(cx + 4 * facing, cy - 3);
-        ctx.lineTo(cx + 8 * facing, cy);
-        ctx.lineTo(cx + 4 * facing, cy + 3);
-        ctx.lineTo(cx - 4 * facing, cy + 3);
+        ctx.moveTo(cx - 20 * facing, cy);
+        ctx.lineTo(cx - 10 * facing, cy - 7);
+        ctx.lineTo(cx + 10 * facing, cy - 7);
+        ctx.lineTo(cx + 20 * facing, cy);
+        ctx.lineTo(cx + 10 * facing, cy + 7);
+        ctx.lineTo(cx - 10 * facing, cy + 7);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
         ctx.fillStyle = COL_HOSTILE;
-        ctx.fillRect(cx - 1, cy - 1, 2, 2);
+        ctx.fillRect(cx - 2, cy - 2, 4, 4);
       } else {
-        // Sharp dark delta-wing
         ctx.fillStyle = "#0e141c";
         ctx.strokeStyle = "#667788";
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(cx + 9 * facing, cy);
-        ctx.lineTo(cx - 7 * facing, cy - 4);
-        ctx.lineTo(cx - 3 * facing, cy);
-        ctx.lineTo(cx - 7 * facing, cy + 4);
+        ctx.moveTo(cx + 22 * facing, cy);
+        ctx.lineTo(cx - 16 * facing, cy - 9);
+        ctx.lineTo(cx - 6 * facing, cy);
+        ctx.lineTo(cx - 16 * facing, cy + 9);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
         ctx.fillStyle = COL_HOSTILE;
-        ctx.fillRect(cx + 2 * facing - 1, cy - 1, 2, 2);
+        ctx.fillRect(cx + 4 * facing - 2, cy - 2, 4, 4);
       }
       drawFlyerTag(f);
     }
@@ -1073,61 +1057,56 @@
 
   function drawRadarFrame() {
     var tick;
-    var step = 20;
-    ctx.strokeStyle = "rgba(100, 140, 200, 0.45)";
-    ctx.fillStyle = "rgba(140, 180, 230, 0.55)";
+    var step = 50;
     ctx.lineWidth = 1;
-    ctx.font = "7px monospace";
+    ctx.font = "11px monospace";
     ctx.textAlign = "left";
 
-    // Outer monitor frame
     ctx.strokeStyle = "rgba(80, 120, 180, 0.5)";
-    ctx.strokeRect(0.5, 0.5, W - 1, GROUND_Y - 1);
+    ctx.strokeRect(1, 1, W - 2, GROUND_Y - 2);
 
-    // Top / bottom latitude ticks + numbers
+    ctx.strokeStyle = "rgba(100, 140, 200, 0.45)";
+    ctx.fillStyle = "rgba(140, 180, 230, 0.55)";
     for (tick = 0; tick <= W; tick += step) {
       ctx.beginPath();
       ctx.moveTo(tick, 0);
-      ctx.lineTo(tick, 4);
+      ctx.lineTo(tick, 8);
       ctx.moveTo(tick, GROUND_Y);
-      ctx.lineTo(tick, GROUND_Y - 4);
+      ctx.lineTo(tick, GROUND_Y - 8);
       ctx.stroke();
       if (tick > 0 && tick < W) {
-        ctx.fillText(String(tick), tick + 1, 9);
+        ctx.fillText(String(tick), tick + 2, 14);
       }
     }
 
-    // Left / right longitude ticks + numbers
-    ctx.textAlign = "left";
     for (tick = 0; tick <= GROUND_Y; tick += step) {
       ctx.beginPath();
       ctx.moveTo(0, tick);
-      ctx.lineTo(4, tick);
+      ctx.lineTo(8, tick);
       ctx.moveTo(W, tick);
-      ctx.lineTo(W - 4, tick);
+      ctx.lineTo(W - 8, tick);
       ctx.stroke();
-      if (tick > 8 && tick < GROUND_Y - 4) {
-        ctx.fillText(String(tick), 5, tick + 3);
+      if (tick > 14 && tick < GROUND_Y - 8) {
+        ctx.fillText(String(tick), 10, tick + 4);
       }
     }
 
-    // Corner crosshairs
     ctx.strokeStyle = "rgba(0, 220, 255, 0.55)";
     var corners = [
-      [6, 6],
-      [W - 6, 6],
-      [6, GROUND_Y - 6],
-      [W - 6, GROUND_Y - 6],
+      [12, 12],
+      [W - 12, 12],
+      [12, GROUND_Y - 12],
+      [W - 12, GROUND_Y - 12],
     ];
     var ci;
     for (ci = 0; ci < corners.length; ci++) {
       var cx = corners[ci][0];
       var cy = corners[ci][1];
       ctx.beginPath();
-      ctx.moveTo(cx - 4, cy);
-      ctx.lineTo(cx + 4, cy);
-      ctx.moveTo(cx, cy - 4);
-      ctx.lineTo(cx, cy + 4);
+      ctx.moveTo(cx - 8, cy);
+      ctx.lineTo(cx + 8, cy);
+      ctx.moveTo(cx, cy - 8);
+      ctx.lineTo(cx, cy + 8);
       ctx.stroke();
     }
   }
@@ -1460,6 +1439,7 @@
     if (btnStart.disabled) {
       return;
     }
+    starField = null;
     nextTrackId = 1;
     score = 0;
     wave = 1;
@@ -1512,8 +1492,8 @@
     var sx = (cx - rect.left) * (canvas.width / rect.width);
     var sy = (cy - rect.top) * (canvas.height / rect.height);
     return {
-      x: (sx - viewOffsetX) / viewScale,
-      y: (sy - viewOffsetY) / viewScale,
+      x: sx / scaleX,
+      y: sy / scaleY,
     };
   }
 
