@@ -891,17 +891,22 @@
 
   function drawMissiles() {
     var i;
-    // Inbound: pure kinetic trajectory vectors (start → current), not craft sprites
+    // Inbound: kinetic trajectory + leading warhead tip
     ctx.lineCap = "butt";
     ctx.lineJoin = "miter";
     for (i = 0; i < enemyMissiles.length; i++) {
       var m = enemyMissiles[i];
       ctx.beginPath();
+      ctx.strokeStyle = m.smart ? "#ff2200" : "#ff4500";
+      ctx.lineWidth = 1.5;
       ctx.moveTo(m.startX, m.startY);
       ctx.lineTo(m.x, m.y);
-      ctx.strokeStyle = m.smart ? "#ff2200" : "#ff6622";
-      ctx.lineWidth = 1.5;
       ctx.stroke();
+
+      ctx.beginPath();
+      ctx.fillStyle = "#ffff00";
+      ctx.arc(m.x, m.y, 2, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // Friendly interceptors: cyan vector trails
@@ -911,15 +916,33 @@
     }
   }
 
+  var starField = null;
+
+  function ensureStarField() {
+    if (starField) {
+      return;
+    }
+    starField = [];
+    var i;
+    for (i = 0; i < 55; i++) {
+      starField.push({
+        x: Math.random() * W,
+        y: Math.random() * (GROUND_Y - 8),
+        s: Math.random() < 0.2 ? 2 : 1,
+        bright: Math.random() < 0.25,
+      });
+    }
+  }
+
   function drawBackground() {
+    ensureStarField();
     ctx.fillStyle = "#020810";
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#f4f7ff";
     var i;
-    for (i = 0; i < 36; i++) {
-      var sx = (i * 97 + wave * 13) % W;
-      var sy = (i * 53) % (GROUND_Y - 20);
-      ctx.fillRect(sx, sy, 1, 1);
+    for (i = 0; i < starField.length; i++) {
+      var st = starField[i];
+      ctx.fillStyle = st.bright ? "#f4f7ff" : "#8899bb";
+      ctx.fillRect(st.x, st.y, st.s, st.s);
     }
   }
 
