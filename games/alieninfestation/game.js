@@ -25,8 +25,14 @@
   var instructionsEl = document.getElementById("instructions");
   var endHintEl = document.getElementById("end-hint");
 
-  var W = canvas.width;
-  var H = canvas.height;
+  // Authentic Galaga vertical aspect (3:4) — all gameplay uses these coords
+  var VIRTUAL_WIDTH = 224;
+  var VIRTUAL_HEIGHT = 288;
+  var W = VIRTUAL_WIDTH;
+  var H = VIRTUAL_HEIGHT;
+  var viewScale = 1;
+  var viewOffsetX = 0;
+  var viewOffsetY = 0;
 
   var PHASE_MENU = "menu";
   var PHASE_READY = "ready";
@@ -58,8 +64,8 @@
 
   var PTS_FORM_BY_TYPE = [150, 80, 50];
   var PTS_DIVE_BY_TYPE = [400, 160, 100];
-  var BASE_DIVE_SPEED = 2.4;
-  var SPRITE_PX = 2;
+  var BASE_DIVE_SPEED = 1.15;
+  var SPRITE_PX = 1;
   var waveConfig = null;
   var diveChance = 0.55;
   var maxEnemyBullets = 3;
@@ -110,11 +116,11 @@
   var convoySide = 0;
 
   var player = {
-    x: W / 2 - 16,
-    y: H - 56,
-    w: 32,
-    h: 32,
-    speed: 6.2,
+    x: W / 2 - 8,
+    y: H - 28,
+    w: 16,
+    h: 16,
+    speed: 2.1,
   };
   var playerBullets = [];
   var enemyBullets = [];
@@ -268,6 +274,37 @@
   ];
 
   var ENEMY_SETS = [BOSS_FRAMES, GUARDIAN_FRAMES, DRONE_FRAMES];
+
+  function resizeCanvas() {
+    var displayW = canvas.clientWidth || window.innerWidth || VIRTUAL_WIDTH;
+    var displayH = canvas.clientHeight || window.innerHeight || VIRTUAL_HEIGHT;
+    if (displayW < 1) {
+      displayW = VIRTUAL_WIDTH;
+    }
+    if (displayH < 1) {
+      displayH = VIRTUAL_HEIGHT;
+    }
+    if (canvas.width !== displayW || canvas.height !== displayH) {
+      canvas.width = displayW;
+      canvas.height = displayH;
+    }
+
+    viewScale = Math.min(displayW / VIRTUAL_WIDTH, displayH / VIRTUAL_HEIGHT);
+    viewOffsetX = (displayW - VIRTUAL_WIDTH * viewScale) / 2;
+    viewOffsetY = (displayH - VIRTUAL_HEIGHT * viewScale) / 2;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, displayW, displayH);
+
+    ctx.translate(viewOffsetX, viewOffsetY);
+    ctx.scale(viewScale, viewScale);
+
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth = 1 / viewScale;
+    ctx.strokeRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+  }
 
   function initStars() {
     stars = [];
@@ -427,7 +464,7 @@
     var n = count || 14;
     for (i = 0; i < n; i++) {
       var ang = (Math.PI * 2 * i) / n + Math.random() * 0.4;
-      var sp = 1.2 + Math.random() * 3.5;
+      var sp = 0.6 + Math.random() * 1.6;
       particles.push({
         x: x,
         y: y,
@@ -435,7 +472,7 @@
         vy: Math.sin(ang) * sp,
         life: 16 + Math.floor(Math.random() * 12),
         color: color,
-        s: 1.5 + Math.random() * 2,
+        s: 1 + Math.random() * 1.2,
       });
     }
   }
@@ -459,7 +496,7 @@
       var cols = rows[row].cols;
       var type = rows[row].type;
       var size = enemySpriteSize(type);
-      var gap = type === TYPE_BOSS ? 56 : type === TYPE_GUARDIAN ? 44 : 40;
+      var gap = type === TYPE_BOSS ? 22 : type === TYPE_GUARDIAN ? 20 : 18;
       var totalW = cols * gap;
       var startX = (W - totalW) / 2 + gap / 2;
       for (col = 0; col < cols; col++) {
@@ -468,7 +505,7 @@
           col: col,
           type: type,
           homeX: startX + col * gap,
-          homeY: 52 + row * 36 + size.h / 2,
+          homeY: 28 + row * 18 + size.h / 2,
           w: size.w,
           h: size.h,
         });
@@ -487,26 +524,26 @@
     var c2x;
     var c2y;
     if (pattern === 0) {
-      sx = fromLeft ? -50 : W + 50;
-      sy = 30 + (index % 6) * 16;
-      c1x = fromLeft ? W * 0.25 : W * 0.75;
-      c1y = 120 + (index % 4) * 30;
-      c2x = fromLeft ? W * 0.55 : W * 0.45;
-      c2y = 200;
-    } else if (pattern === 1) {
-      sx = W * 0.5 + (fromLeft ? -30 : 30);
-      sy = -40 - (index % 5) * 12;
-      c1x = fromLeft ? W * 0.15 : W * 0.85;
-      c1y = 160;
-      c2x = fromLeft ? W * 0.7 : W * 0.3;
-      c2y = 240;
-    } else {
       sx = fromLeft ? -40 : W + 40;
+      sy = 20 + (index % 6) * 10;
+      c1x = fromLeft ? W * 0.25 : W * 0.75;
+      c1y = 70 + (index % 4) * 16;
+      c2x = fromLeft ? W * 0.55 : W * 0.45;
+      c2y = 120;
+    } else if (pattern === 1) {
+      sx = W * 0.5 + (fromLeft ? -20 : 20);
+      sy = -30 - (index % 5) * 8;
+      c1x = fromLeft ? W * 0.15 : W * 0.85;
+      c1y = 90;
+      c2x = fromLeft ? W * 0.7 : W * 0.3;
+      c2y = 140;
+    } else {
+      sx = fromLeft ? -30 : W + 30;
       sy = H * 0.35;
       c1x = fromLeft ? W * 0.4 : W * 0.6;
-      c1y = 80;
+      c1y = 50;
       c2x = W * 0.5;
-      c2y = 180;
+      c2y = 110;
     }
     return {
       sx: sx,
@@ -778,11 +815,11 @@
       return;
     }
     enemyBullets.push({
-      x: s.x - 2,
+      x: s.x - 1,
       y: s.y + s.h / 2,
-      w: 4,
-      h: 11,
-      vy: 3.4 + level * 0.18,
+      w: 2,
+      h: 5,
+      vy: 1.5 + level * 0.08,
     });
   }
 
@@ -831,7 +868,7 @@
     e.diveT++;
     if (!e.tractorActive) {
       e.y += e.diveSpeed * 0.85;
-      e.x = e.homeX + Math.sin(e.diveT / 8 + e.divePhase) * 30;
+      e.x = e.homeX + Math.sin(e.diveT / 8 + e.divePhase) * 14;
       if (e.y >= H * 0.42) {
         e.tractorActive = true;
         e.tractorT = 0;
@@ -840,8 +877,8 @@
       return;
     }
     e.tractorT++;
-    e.x = e.homeX + Math.sin(animFrame / 10) * 8;
-    e.y = H * 0.42 + Math.sin(animFrame / 14) * 4;
+    e.x = e.homeX + Math.sin(animFrame / 10) * 4;
+    e.y = H * 0.42 + Math.sin(animFrame / 14) * 2;
     if (e.tractorT > 160) {
       e.mode = MODE_DIVING;
       e.tractorActive = false;
@@ -854,13 +891,13 @@
     e.y += e.diveSpeed;
     e.x =
       e.homeX +
-      Math.sin(e.diveT / 6.5 + e.divePhase) * (28 + e.diveAmp * 10) +
-      Math.sin(e.diveT / 18) * 12;
+      Math.sin(e.diveT / 6.5 + e.divePhase) * (12 + e.diveAmp * 4) +
+      Math.sin(e.diveT / 18) * 5;
     if (
       dronePassFire &&
       e.type === TYPE_DRONE &&
       !e.passFired &&
-      Math.abs(e.y - player.y) < 18
+      Math.abs(e.y - player.y) < 10
     ) {
       e.passFired = true;
       fireEnemyBullet(e);
@@ -996,7 +1033,7 @@
   }
 
   function updateEnemies() {
-    formationBob = formationReady ? Math.sin(animFrame / 38) * 14 : 0;
+    formationBob = formationReady ? Math.sin(animFrame / 38) * 6 : 0;
     var i;
     for (i = 0; i < enemies.length; i++) {
       var e = enemies[i];
@@ -1033,7 +1070,7 @@
       }
       var px = player.x + player.w / 2;
       var py = player.y + player.h / 2;
-      var inBeamX = Math.abs(px - e.x) < 38;
+      var inBeamX = Math.abs(px - e.x) < 18;
       var inBeamY = py > e.y + e.h * 0.3 && py < H - 10;
       if (inBeamX && inBeamY) {
         startCapture(e);
@@ -1069,29 +1106,29 @@
     var cx = player.x + player.w / 2;
     if (dualFighter) {
       playerBullets.push({
-        x: cx - 18,
-        y: player.y - 6,
-        w: 4,
-        h: 12,
-        vy: -11,
+        x: cx - 10,
+        y: player.y - 4,
+        w: 2,
+        h: 6,
+        vy: -5,
         side: "L",
       });
       playerBullets.push({
-        x: cx + 14,
-        y: player.y - 6,
-        w: 4,
-        h: 12,
-        vy: -11,
+        x: cx + 8,
+        y: player.y - 4,
+        w: 2,
+        h: 6,
+        vy: -5,
         side: "R",
       });
       shotsFired += 2;
     } else {
       playerBullets.push({
-        x: cx - 2,
-        y: player.y - 8,
-        w: 4,
-        h: 12,
-        vy: -11,
+        x: cx - 1,
+        y: player.y - 5,
+        w: 2,
+        h: 6,
+        vy: -5,
         side: "C",
       });
       shotsFired += 1;
@@ -1263,11 +1300,11 @@
   function playerHitboxes() {
     if (dualFighter) {
       return [
-        { x: player.x - 14, y: player.y + 4, w: 28, h: player.h - 6, side: "L" },
-        { x: player.x + player.w - 14, y: player.y + 4, w: 28, h: player.h - 6, side: "R" },
+        { x: player.x - 8, y: player.y + 2, w: 14, h: player.h - 3, side: "L" },
+        { x: player.x + player.w - 6, y: player.y + 2, w: 14, h: player.h - 3, side: "R" },
       ];
     }
-    return [{ x: player.x + 4, y: player.y + 4, w: player.w - 8, h: player.h - 6, side: "C" }];
+    return [{ x: player.x + 2, y: player.y + 2, w: player.w - 4, h: player.h - 3, side: "C" }];
   }
 
   function checkPlayerHit() {
@@ -1535,8 +1572,8 @@
     if (keys.ArrowRight || keys.right || keys.d || keys.D) {
       player.x += player.speed;
     }
-    var minX = dualFighter ? 22 : 8;
-    var maxX = dualFighter ? W - player.w - 22 : W - player.w - 8;
+    var minX = dualFighter ? 10 : 4;
+    var maxX = dualFighter ? W - player.w - 10 : W - player.w - 4;
     if (player.x < minX) {
       player.x = minX;
     }
@@ -1610,10 +1647,10 @@
       for (i = playerBullets.length - 1; i >= 0; i--) {
         var bCap = playerBullets[i];
         var capBox = {
-          x: capturedShip.x - 14,
-          y: capturedShip.y - 12,
-          w: 28,
-          h: 24,
+          x: capturedShip.x - 8,
+          y: capturedShip.y - 8,
+          w: 16,
+          h: 16,
         };
         if (rectsOverlap(bCap, capBox)) {
           playerBullets.splice(i, 1);
@@ -1626,10 +1663,10 @@
       for (i = playerBullets.length - 1; i >= 0; i--) {
         var bFall = playerBullets[i];
         var fallBox = {
-          x: capturedShip.x - 14,
-          y: capturedShip.y - 12,
-          w: 28,
-          h: 24,
+          x: capturedShip.x - 8,
+          y: capturedShip.y - 8,
+          w: 16,
+          h: 16,
         };
         if (rectsOverlap(bFall, fallBox)) {
           playerBullets.splice(i, 1);
@@ -1728,8 +1765,8 @@
     var cx = player.x + player.w / 2;
     var cy = player.y + player.h / 2;
     if (dualFighter) {
-      drawMatrixCentered(PLAYER_SHIP, cx - 18, cy, SPRITE_PX, SPRITE_PALETTE);
-      drawMatrixCentered(PLAYER_SHIP, cx + 18, cy, SPRITE_PX, SPRITE_PALETTE);
+      drawMatrixCentered(PLAYER_SHIP, cx - 10, cy, SPRITE_PX, SPRITE_PALETTE);
+      drawMatrixCentered(PLAYER_SHIP, cx + 10, cy, SPRITE_PX, SPRITE_PALETTE);
     } else {
       drawMatrixCentered(PLAYER_SHIP, cx, cy, SPRITE_PX, SPRITE_PALETTE);
     }
@@ -1742,22 +1779,22 @@
     drawMatrixCentered(matrix, e.x, e.y, SPRITE_PX, enemyPalette(e));
 
     if (e.mode === MODE_TRACTOR && e.tractorActive) {
-      var beamH = H - e.y - 40;
+      var beamH = H - e.y - 20;
       var spin = animFrame * 0.25;
       var k;
       ctx.save();
       for (k = 0; k < 8; k++) {
         var a = spin + (k * Math.PI) / 4;
-        var ox = Math.cos(a) * 14;
+        var ox = Math.cos(a) * 8;
         ctx.strokeStyle = "rgba(80,255,210," + (0.3 + (k % 2) * 0.25) + ")";
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(e.x + ox * 0.4, e.y + e.h / 2);
         ctx.lineTo(e.x + ox, e.y + beamH);
         ctx.stroke();
       }
       ctx.fillStyle = "rgba(60,255,200,0.12)";
-      ctx.fillRect(e.x - 38, e.y + e.h / 2, 76, beamH);
+      ctx.fillRect(e.x - 18, e.y + e.h / 2, 36, beamH);
       ctx.restore();
     }
   }
@@ -1792,14 +1829,14 @@
     }
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.fillRect(W * 0.15, H * 0.38, W * 0.7, 48);
+    ctx.fillRect(W * 0.1, H * 0.38, W * 0.8, 22);
     ctx.strokeStyle = "#7cf5ff";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(W * 0.15, H * 0.38, W * 0.7, 48);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(W * 0.1, H * 0.38, W * 0.8, 22);
     ctx.fillStyle = "#ffe066";
-    ctx.font = "bold 22px monospace";
+    ctx.font = "bold 10px monospace";
     ctx.textAlign = "center";
-    ctx.fillText(bannerText, W / 2, H * 0.38 + 32);
+    ctx.fillText(bannerText, W / 2, H * 0.38 + 15);
     ctx.textAlign = "left";
     ctx.restore();
   }
@@ -1807,22 +1844,20 @@
   function drawCrtOverlay() {
     var y;
     ctx.save();
-    // Soft phosphor screen wash
     ctx.fillStyle = "rgba(24, 82, 165, 0.035)";
     ctx.fillRect(0, 0, W, H);
-    // Horizontal scanlines (arcade tube look)
     ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
     for (y = 0; y < H; y += 2) {
       ctx.fillRect(0, y, W, 1);
     }
-    // Gentle vignette edges
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.28)";
-    ctx.lineWidth = 18;
-    ctx.strokeRect(9, 9, W - 18, H - 18);
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, W - 4, H - 4);
     ctx.restore();
   }
 
   function draw() {
+    resizeCanvas();
     drawStarfield();
     var i;
     for (i = 0; i < enemies.length; i++) {
@@ -1839,7 +1874,7 @@
       var pb = playerBullets[i];
       ctx.fillRect(pb.x, pb.y, pb.w, pb.h);
       ctx.fillStyle = "#ffff00";
-      ctx.fillRect(pb.x + 1, pb.y, 2, 4);
+      ctx.fillRect(pb.x, pb.y, 1, 2);
       ctx.fillStyle = "#f4f7ff";
     }
     ctx.fillStyle = "#de2121";
