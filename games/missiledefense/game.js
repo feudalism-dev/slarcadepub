@@ -1183,7 +1183,7 @@
 
   function showMenuOverlay() {
     overlay.classList.remove("hidden");
-    overlayTitle.textContent = "TACTICAL DEFENSE";
+    overlayTitle.textContent = "SL MISSILE DEFENSE";
     instructionsEl.textContent =
       "Command console: click to fire interceptors. Infinite waves. Bonus city every " +
       CITY_BONUS_EVERY +
