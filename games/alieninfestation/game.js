@@ -123,30 +123,30 @@
   var stars = [];
   var capturedShip = null;
 
-  // Palette: 0 transparent, 1 white, 2 red, 3 blue, 4 yellow
+  // Authentic 1981 arcade CRT palette (0 = transparent)
   var SPRITE_PALETTE = {
-    1: "#ffffff",
-    2: "#ff0000",
-    3: "#0000ff",
-    4: "#ffff00",
+    1: "#f4f7ff",
+    2: "#de2121",
+    3: "#1852a5",
+    4: "#e7c700",
   };
   var BOSS_PALETTE_OK = {
-    1: "#ffffff",
-    2: "#ff0000",
-    3: "#00e070",
-    4: "#ffff00",
+    1: "#f4f7ff",
+    2: "#de2121",
+    3: "#00de73",
+    4: "#e7c700",
   };
   var BOSS_PALETTE_HURT = {
-    1: "#ffffff",
-    2: "#ff6600",
-    3: "#2244ff",
-    4: "#ffcc00",
+    1: "#f4f7ff",
+    2: "#de2121",
+    3: "#0044ff",
+    4: "#e7c700",
   };
   var CAPTURED_PALETTE = {
-    1: "#ff4444",
-    2: "#aa0000",
-    3: "#880022",
-    4: "#ffaa00",
+    1: "#de2121",
+    2: "#a01818",
+    3: "#1852a5",
+    4: "#e7c700",
   };
 
   var PLAYER_SHIP = [
@@ -320,14 +320,14 @@
   function enemyBurstColor(e) {
     if (e.type === TYPE_BOSS) {
       if (e.hp >= 2) {
-        return "#00e070";
+        return "#00de73";
       }
-      return "#2244ff";
+      return "#0044ff";
     }
     if (e.type === TYPE_GUARDIAN) {
-      return "#ff0000";
+      return "#de2121";
     }
-    return "#0000ff";
+    return "#1852a5";
   }
 
   function pixelSpriteSize(matrix, pixelSize) {
@@ -341,10 +341,23 @@
     return { w: maxW * pixelSize, h: matrix.length * pixelSize };
   }
 
+  function fillSoftPixel(px, py, size, color) {
+    var cx = px + size * 0.5;
+    var cy = py + size * 0.5;
+    var radius = size * 0.58;
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 2;
+    ctx.shadowColor = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   function drawMatrix(matrix, x, y, pixelSize, colorMap) {
     var map = colorMap || SPRITE_PALETTE;
     var r;
     var c;
+    ctx.save();
     for (r = 0; r < matrix.length; r++) {
       for (c = 0; c < matrix[r].length; c++) {
         var v = matrix[r][c];
@@ -355,10 +368,17 @@
         if (!col) {
           continue;
         }
-        ctx.fillStyle = col;
-        ctx.fillRect(x + c * pixelSize, y + r * pixelSize, pixelSize, pixelSize);
+        fillSoftPixel(
+          x + c * pixelSize,
+          y + r * pixelSize,
+          pixelSize,
+          col
+        );
       }
     }
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+    ctx.restore();
   }
 
   function drawMatrixCentered(matrix, cx, cy, pixelSize, colorMap) {
@@ -1821,6 +1841,24 @@
     ctx.restore();
   }
 
+  function drawCrtOverlay() {
+    var y;
+    ctx.save();
+    // Soft phosphor screen wash
+    ctx.fillStyle = "rgba(24, 82, 165, 0.035)";
+    ctx.fillRect(0, 0, W, H);
+    // Horizontal scanlines (arcade tube look)
+    ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+    for (y = 0; y < H; y += 2) {
+      ctx.fillRect(0, y, W, 1);
+    }
+    // Gentle vignette edges
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.28)";
+    ctx.lineWidth = 18;
+    ctx.strokeRect(9, 9, W - 18, H - 18);
+    ctx.restore();
+  }
+
   function draw() {
     drawStarfield();
     var i;
@@ -1833,25 +1871,36 @@
     if (phase !== PHASE_MENU && phase !== PHASE_OVER && phase !== PHASE_DIED) {
       drawPlayerShip();
     }
-    ctx.fillStyle = "#b8f0ff";
+    ctx.save();
+    ctx.shadowBlur = 2;
+    ctx.shadowColor = "#f4f7ff";
+    ctx.fillStyle = "#f4f7ff";
     for (i = 0; i < playerBullets.length; i++) {
       var pb = playerBullets[i];
-      ctx.fillRect(pb.x, pb.y, pb.w, pb.h);
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(pb.x + 1, pb.y, 2, 4);
-      ctx.fillStyle = "#b8f0ff";
+      ctx.beginPath();
+      ctx.arc(pb.x + pb.w * 0.5, pb.y + pb.h * 0.35, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#e7c700";
+      ctx.fillRect(pb.x + 1, pb.y + 3, 2, pb.h - 3);
+      ctx.fillStyle = "#f4f7ff";
     }
-    ctx.fillStyle = "#ff6a4a";
+    ctx.shadowColor = "#de2121";
+    ctx.fillStyle = "#de2121";
     for (i = 0; i < enemyBullets.length; i++) {
       var eb = enemyBullets[i];
-      ctx.fillRect(eb.x, eb.y, eb.w, eb.h);
+      ctx.beginPath();
+      ctx.arc(eb.x + eb.w * 0.5, eb.y + eb.h * 0.5, 2.4, 0, Math.PI * 2);
+      ctx.fill();
     }
+    ctx.shadowBlur = 0;
+    ctx.restore();
     drawParticles();
     drawBanner();
     if (phase === PHASE_READY && readyTimer > 0) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
       ctx.fillRect(0, 0, W, H);
     }
+    drawCrtOverlay();
   }
 
   function loop() {
