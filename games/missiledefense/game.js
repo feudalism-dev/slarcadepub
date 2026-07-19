@@ -51,8 +51,8 @@
   var SAUCER_POINTS = 125;
   var BOMBER_POINTS = 50;
   var SPLIT_CHANCE_BASE = 0.12;
-  var EXP_MAX_R = 18;
-  var EXP_GROW = 0.85;
+  var EXP_MAX_R = 22;
+  var EXP_GROW = 0.9;
   var MISSILE_SPEED_BASE = 0.42;
   var MISSILE_SPEED_STEP = 0.055;
   var MISSILE_SPEED_CAP_WAVE = 6;
@@ -86,26 +86,18 @@
   var FLYER_SAUCER = "saucer";
   var FLYER_BOMBER = "bomber";
 
-  // Multi-color city silhouette (0 transparent)
-  var CITY_SPRITE = [
-    [0, 0, 1, 1, 0, 0, 2, 2, 0, 0, 1, 1, 0, 0],
-    [0, 1, 1, 1, 1, 0, 2, 2, 0, 1, 1, 1, 1, 0],
-    [1, 1, 3, 1, 1, 1, 2, 2, 1, 1, 3, 1, 1, 1],
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-    [1, 3, 1, 1, 3, 1, 1, 1, 3, 1, 1, 3, 1, 1],
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  ];
-  var CITY_PAL = { 1: "#3ec8ff", 2: "#f4f7ff", 3: "#ffe066" };
-
-  var BATTERY_SPRITE = [
-    [0, 0, 0, 4, 4, 0, 0, 0],
-    [0, 0, 4, 4, 4, 4, 0, 0],
-    [0, 1, 1, 4, 4, 1, 1, 0],
-    [1, 1, 1, 1, 1, 1, 1, 1],
-    [1, 2, 1, 1, 1, 1, 2, 1],
-  ];
-  var BATTERY_PAL_OK = { 1: "#00e8a0", 2: "#f4f7ff", 4: "#7cf5ff" };
-  var BATTERY_PAL_EMPTY = { 1: "#445566", 2: "#8899aa", 4: "#556677" };
+  var COL_GRID = "rgba(40, 70, 110, 0.35)";
+  var COL_GROUND = "#1a8cff";
+  var COL_CITY = "#00d4ff";
+  var COL_CITY_DIM = "#1a4a66";
+  var COL_TURRET = "#00ffc8";
+  var COL_TURRET_EMPTY = "#3a5566";
+  var COL_THREAT = "#ff4500";
+  var COL_THREAT_SMART = "#ff0044";
+  var COL_WARHEAD = "#ffff66";
+  var COL_LOCK = "rgba(255, 255, 255, 0.22)";
+  var COL_INTERCEPT = "#00ffcc";
+  var GRID_SPACING = 40;
 
   function setOverlayButtons(showStart, showNext) {
     btnStart.classList.toggle("hidden", !showStart);
@@ -174,25 +166,6 @@
         document.body.focus();
       }
     } catch (err) {}
-  }
-
-  function drawMatrix(matrix, x, y, pixelSize, palette) {
-    var r;
-    var c;
-    for (r = 0; r < matrix.length; r++) {
-      for (c = 0; c < matrix[r].length; c++) {
-        var v = matrix[r][c];
-        if (!v) {
-          continue;
-        }
-        var col = palette[v];
-        if (!col) {
-          continue;
-        }
-        ctx.fillStyle = col;
-        ctx.fillRect(x + c * pixelSize, y + r * pixelSize, pixelSize, pixelSize);
-      }
-    }
   }
 
   function aliveCities() {
@@ -798,8 +771,8 @@
       return;
     }
     ctx.strokeStyle = color;
-    ctx.lineWidth = width || 2;
-    ctx.lineCap = "square";
+    ctx.lineWidth = width || 1.5;
+    ctx.lineCap = "butt";
     ctx.beginPath();
     ctx.moveTo(trail[0].x, trail[0].y);
     var i;
@@ -809,33 +782,111 @@
     ctx.stroke();
   }
 
+  function drawWarheadTip(x, y, vx, vy, fillColor) {
+    var ang = Math.atan2(vy, vx);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ang);
+    ctx.beginPath();
+    ctx.moveTo(4, 0);
+    ctx.lineTo(-2.5, 2.5);
+    ctx.lineTo(-1, 0);
+    ctx.lineTo(-2.5, -2.5);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawCityWireframe(c) {
+    var x = c.x;
+    var y = c.y;
+    var w = c.w;
+    var h = c.h;
+    ctx.strokeStyle = COL_CITY;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x, y + 4);
+    ctx.lineTo(x + 3, y + 4);
+    ctx.lineTo(x + 3, y);
+    ctx.lineTo(x + 6, y);
+    ctx.lineTo(x + 6, y + 4);
+    ctx.lineTo(x + 8, y + 4);
+    ctx.lineTo(x + 8, y + 1);
+    ctx.lineTo(x + 11, y + 1);
+    ctx.lineTo(x + 11, y + 4);
+    ctx.lineTo(x + w, y + 4);
+    ctx.lineTo(x + w, y + h);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + 2, y + 7);
+    ctx.lineTo(x + 2, y + h - 1);
+    ctx.moveTo(x + 5, y + 7);
+    ctx.lineTo(x + 5, y + h - 1);
+    ctx.moveTo(x + 9, y + 7);
+    ctx.lineTo(x + 9, y + h - 1);
+    ctx.stroke();
+  }
+
+  function drawTurret(b) {
+    var armed = b.ammo > 0;
+    ctx.strokeStyle = armed ? COL_TURRET : COL_TURRET_EMPTY;
+    ctx.fillStyle = armed ? "rgba(0, 255, 200, 0.12)" : "rgba(60, 80, 100, 0.15)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y - 6);
+    ctx.lineTo(b.x + 7, b.y + 2);
+    ctx.lineTo(b.x + 5, b.y + 8);
+    ctx.lineTo(b.x - 5, b.y + 8);
+    ctx.lineTo(b.x - 7, b.y + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y - 6);
+    ctx.lineTo(b.x, b.y - 12);
+    ctx.lineTo(b.x + 3, b.y - 9);
+    ctx.lineTo(b.x, b.y - 6);
+    ctx.stroke();
+    ctx.fillStyle = armed ? COL_INTERCEPT : "#668899";
+    ctx.font = "7px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(String(b.ammo), b.x, b.y + 16);
+  }
+
   function drawGround() {
-    ctx.strokeStyle = "#00e8ff";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = COL_GROUND;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(0, GROUND_Y);
     ctx.lineTo(W, GROUND_Y);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(26, 140, 255, 0.35)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y + 3);
+    ctx.lineTo(W, GROUND_Y + 3);
     ctx.stroke();
 
     var i;
     for (i = 0; i < cities.length; i++) {
       var c = cities[i];
       if (!c.alive) {
-        ctx.fillStyle = "#1a2030";
-        ctx.fillRect(c.x, GROUND_Y - 2, c.w, 2);
+        ctx.strokeStyle = COL_CITY_DIM;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(c.x, GROUND_Y);
+        ctx.lineTo(c.x + c.w, GROUND_Y);
+        ctx.stroke();
         continue;
       }
-      drawMatrix(CITY_SPRITE, c.x, c.y, 1, CITY_PAL);
+      drawCityWireframe(c);
     }
 
     for (i = 0; i < batteries.length; i++) {
-      var b = batteries[i];
-      var pal = b.ammo > 0 ? BATTERY_PAL_OK : BATTERY_PAL_EMPTY;
-      drawMatrix(BATTERY_SPRITE, b.x - 4, b.y - 2, 1, pal);
-      ctx.fillStyle = b.ammo > 0 ? "#7cf5ff" : "#667788";
-      ctx.font = "7px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(String(b.ammo), b.x, b.y + 14);
+      drawTurret(batteries[i]);
     }
   }
 
@@ -843,22 +894,24 @@
     var i;
     for (i = 0; i < explosions.length; i++) {
       var e = explosions[i];
-      var rOuter = Math.max(1, Math.floor(e.r));
-      var rMid = Math.max(1, Math.floor(e.r * 0.65));
-      var rInner = Math.max(1, Math.floor(e.r * 0.3));
-      ctx.strokeStyle = e.growing ? "#ffcc33" : "#ff6622";
-      ctx.lineWidth = 2;
+      var r = Math.max(1, e.r);
+      var fade = e.growing ? 1 : Math.max(0.15, e.r / e.maxR);
+
       ctx.beginPath();
-      ctx.arc(e.x, e.y, rOuter, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(0, 255, 255, " + (0.2 * fade) + ")";
+      ctx.lineWidth = 1.5;
+      ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.strokeStyle = "#ffe066";
-      ctx.lineWidth = 1;
+
       ctx.beginPath();
-      ctx.arc(e.x, e.y, rMid, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(0, 220, 255, " + (0.55 * fade) + ")";
+      ctx.lineWidth = 1.5;
+      ctx.arc(e.x, e.y, r * 0.62, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = "#ffffff";
+
       ctx.beginPath();
-      ctx.arc(e.x, e.y, rInner, 0, Math.PI * 2);
+      ctx.fillStyle = fade > 0.4 ? "#e8ffff" : "rgba(200, 255, 255, 0.7)";
+      ctx.arc(e.x, e.y, Math.max(1, r * 0.22), 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -867,52 +920,80 @@
     var i;
     for (i = 0; i < flyers.length; i++) {
       var f = flyers[i];
+      var cx = f.x + f.w * 0.5;
+      var cy = f.y + f.h * 0.5;
       if (f.type === FLYER_SAUCER) {
-        ctx.fillStyle = "#ff66cc";
-        ctx.fillRect(f.x + 2, f.y + 2, f.w - 4, 3);
-        ctx.fillStyle = "#7cf5ff";
-        ctx.fillRect(f.x, f.y + 4, f.w, 3);
-        ctx.fillStyle = "#f4f7ff";
-        ctx.fillRect(f.x + 3, f.y + 1, 2, 2);
-        ctx.fillRect(f.x + f.w - 5, f.y + 1, 2, 2);
-      } else {
-        ctx.fillStyle = "#ff8844";
+        ctx.strokeStyle = "#ff66cc";
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(f.x + f.w * 0.5, f.y);
+        ctx.moveTo(f.x, cy);
+        ctx.lineTo(f.x + 3, f.y);
+        ctx.lineTo(f.x + f.w - 3, f.y);
+        ctx.lineTo(f.x + f.w, cy);
+        ctx.lineTo(f.x + f.w - 3, f.y + f.h);
+        ctx.lineTo(f.x + 3, f.y + f.h);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(f.x + 4, cy);
+        ctx.lineTo(f.x + f.w - 4, cy);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = "#ff8844";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(cx, f.y);
         ctx.lineTo(f.x + f.w, f.y + f.h);
+        ctx.lineTo(f.x + f.w * 0.7, cy);
         ctx.lineTo(f.x, f.y + f.h);
         ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = "#ffe066";
-        ctx.fillRect(f.x + f.w * 0.35, f.y + f.h * 0.55, f.w * 0.3, 2);
+        ctx.stroke();
       }
     }
   }
 
+  function drawThreatLocks() {
+    var i;
+    ctx.save();
+    ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = COL_LOCK;
+    ctx.lineWidth = 1;
+    for (i = 0; i < enemyMissiles.length; i++) {
+      var m = enemyMissiles[i];
+      if (m.targetX === undefined || m.targetY === undefined) {
+        continue;
+      }
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y);
+      ctx.lineTo(m.targetX, m.targetY);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   function drawMissiles() {
     var i;
-    // Inbound: kinetic trajectory + leading warhead tip
     ctx.lineCap = "butt";
     ctx.lineJoin = "miter";
+
+    drawThreatLocks();
+
     for (i = 0; i < enemyMissiles.length; i++) {
       var m = enemyMissiles[i];
       ctx.beginPath();
-      ctx.strokeStyle = m.smart ? "#ff2200" : "#ff4500";
+      ctx.strokeStyle = m.smart ? COL_THREAT_SMART : COL_THREAT;
       ctx.lineWidth = 1.5;
       ctx.moveTo(m.startX, m.startY);
       ctx.lineTo(m.x, m.y);
       ctx.stroke();
-
-      ctx.beginPath();
-      ctx.fillStyle = "#ffff00";
-      ctx.arc(m.x, m.y, 2, 0, Math.PI * 2);
-      ctx.fill();
+      drawWarheadTip(m.x, m.y, m.vx, m.vy, COL_WARHEAD);
     }
 
-    // Friendly interceptors: cyan vector trails
     for (i = 0; i < interceptors.length; i++) {
       var p = interceptors[i];
-      drawTrail(p.trail, "#00ffcc", 2);
+      drawTrail(p.trail, COL_INTERCEPT, 1.5);
+      drawWarheadTip(p.x, p.y, p.vx, p.vy, "#ffffff");
     }
   }
 
@@ -924,26 +1005,45 @@
     }
     starField = [];
     var i;
-    for (i = 0; i < 55; i++) {
+    for (i = 0; i < 48; i++) {
       starField.push({
         x: Math.random() * W,
-        y: Math.random() * (GROUND_Y - 8),
-        s: Math.random() < 0.2 ? 2 : 1,
-        bright: Math.random() < 0.25,
+        y: Math.random() * (GROUND_Y - 6),
+        s: Math.random() < 0.18 ? 2 : 1,
+        bright: Math.random() < 0.22,
       });
+    }
+  }
+
+  function drawRadarGrid() {
+    var g;
+    ctx.strokeStyle = COL_GRID;
+    ctx.lineWidth = 1;
+    for (g = GRID_SPACING; g < W; g += GRID_SPACING) {
+      ctx.beginPath();
+      ctx.moveTo(g, 0);
+      ctx.lineTo(g, GROUND_Y);
+      ctx.stroke();
+    }
+    for (g = GRID_SPACING; g < GROUND_Y; g += GRID_SPACING) {
+      ctx.beginPath();
+      ctx.moveTo(0, g);
+      ctx.lineTo(W, g);
+      ctx.stroke();
     }
   }
 
   function drawBackground() {
     ensureStarField();
-    ctx.fillStyle = "#020810";
+    ctx.fillStyle = "#050a12";
     ctx.fillRect(0, 0, W, H);
     var i;
     for (i = 0; i < starField.length; i++) {
       var st = starField[i];
-      ctx.fillStyle = st.bright ? "#f4f7ff" : "#8899bb";
+      ctx.fillStyle = st.bright ? "#c8d8f0" : "#4a5a78";
       ctx.fillRect(st.x, st.y, st.s, st.s);
     }
+    drawRadarGrid();
   }
 
   function draw() {
@@ -954,15 +1054,10 @@
     drawMissiles();
     drawExplosions();
     if (phase === PHASE_READY && readyTimer > 0) {
-      // Solid tactical veil (no alpha / blur — CEF-safe)
-      ctx.fillStyle = "#020810";
-      var veilY;
-      for (veilY = 0; veilY < H; veilY += 4) {
-        ctx.fillRect(0, veilY, W, 1);
-      }
+      ctx.fillStyle = "rgba(5, 10, 18, 0.45)";
+      ctx.fillRect(0, 0, W, H);
     }
   }
-
   function loop() {
     update();
     draw();
@@ -991,9 +1086,9 @@
 
   function showMenuOverlay() {
     overlay.classList.remove("hidden");
-    overlayTitle.textContent = "SL MISSILE DEFENSE";
+    overlayTitle.textContent = "TACTICAL DEFENSE";
     instructionsEl.textContent =
-      "Click to fire interceptors. Infinite waves. Bonus city every " +
+      "Command console: click to fire interceptors. Infinite waves. Bonus city every " +
       CITY_BONUS_EVERY +
       " pts (held in reserve, deployed at wave start).";
     endHintEl.textContent = "";
