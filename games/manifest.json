@@ -49,6 +49,13 @@
       "description": "Wireframe vector battle — TIE fighters, trench run, and the Death Star exhaust port.",
       "url": "games/slwars/",
       "status": "available"
+    },
+    {
+      "id": "seawolf",
+      "title": "Sea Wolf",
+      "description": "Periscope combat against surface ships — Sea Wolf–style naval arcade action.",
+      "url": "games/seawolf/",
+      "status": "available"
     }
   ]
 }
