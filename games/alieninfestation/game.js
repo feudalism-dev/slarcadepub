@@ -1176,6 +1176,27 @@
     if (diversActive() >= maxDivers) {
       return;
     }
+
+    // Prefer sending the boss that holds your fighter — classic rescue dive
+    var captureBoss = null;
+    var fi;
+    for (fi = 0; fi < enemies.length; fi++) {
+      var fe = enemies[fi];
+      if (
+        fe.alive &&
+        fe.mode === MODE_FORMATION &&
+        fe.hasCapture &&
+        fe.type === TYPE_BOSS
+      ) {
+        captureBoss = fe;
+        break;
+      }
+    }
+    if (captureBoss && Math.random() < 0.65) {
+      beginEnemyDive(captureBoss, true);
+      return;
+    }
+
     if (Math.random() > diveChance) {
       return;
     }
@@ -1198,27 +1219,47 @@
       var c = candidates.splice(idx, 1)[0];
       picked.push(c);
     }
-    var baseSp = waveConfig ? waveConfig.diveSpeed : BASE_DIVE_SPEED;
     var i;
     for (i = 0; i < picked.length; i++) {
       var e = picked[i];
-      e.mode = MODE_DIVING;
-      e.diveT = 0;
-      e.diveSpeed = baseSp + Math.random() * 0.7;
-      e.diveAmp = 2.2 + Math.random() * 2.4;
-      e.divePhase = Math.random() * Math.PI * 2;
-      e.tractorActive = false;
-      e.tractorT = 0;
-      e.passFired = false;
+      var asRescue = !!e.hasCapture;
+      beginEnemyDive(e, asRescue);
       if (
         e.type === TYPE_BOSS &&
         !e.hasCapture &&
         !capturedShip &&
         !dualFighter &&
+        !pendingCaptureAttach &&
         Math.random() < 0.35
       ) {
         e.mode = MODE_TRACTOR;
+        e.rescueDive = false;
       }
+    }
+  }
+
+  function beginEnemyDive(e, asRescue) {
+    var baseSp = waveConfig ? waveConfig.diveSpeed : BASE_DIVE_SPEED;
+    e.mode = MODE_DIVING;
+    e.diveT = 0;
+    e.diveSpeed = baseSp + Math.random() * 0.7;
+    e.diveAmp = 2.2 + Math.random() * 2.4;
+    e.divePhase = Math.random() * Math.PI * 2;
+    e.tractorActive = false;
+    e.tractorT = 0;
+    e.passFired = false;
+    e.prevX = e.x;
+    e.prevY = e.y;
+    e.diveStartX = e.x;
+    e.diveStartY = e.y;
+    e.rescueDive = !!asRescue || !!e.hasCapture;
+    if (e.rescueDive) {
+      // Classic: peel toward the nearer side (or opposite of home bias)
+      e.rescueSide = e.homeX < W * 0.5 ? -1 : 1;
+      if (Math.random() < 0.35) {
+        e.rescueSide = -e.rescueSide;
+      }
+      e.diveSpeed = baseSp * 0.9 + Math.random() * 0.35;
     }
   }
 
@@ -1309,12 +1350,18 @@
   }
 
   function updateDiving(e) {
+    e.prevX = e.x;
+    e.prevY = e.y;
     e.diveT++;
-    e.y += e.diveSpeed;
-    e.x =
-      e.homeX +
-      Math.sin(e.diveT / 6.5 + e.divePhase) * (12 + e.diveAmp * 4) +
-      Math.sin(e.diveT / 18) * 5;
+    if (e.rescueDive && e.hasCapture) {
+      updateRescueDive(e);
+    } else {
+      e.y += e.diveSpeed;
+      e.x =
+        e.homeX +
+        Math.sin(e.diveT / 6.5 + e.divePhase) * (12 + e.diveAmp * 4) +
+        Math.sin(e.diveT / 18) * 5;
+    }
     if (
       dronePassFire &&
       e.type === TYPE_DRONE &&
@@ -1332,10 +1379,59 @@
       e.x = e.homeX;
       e.tractorActive = false;
       e.passFired = false;
+      e.rescueDive = false;
+    }
+  }
+
+  // Classic Galaga rescue swoop: peel to one side, one loop mid-screen, then exit
+  function updateRescueDive(e) {
+    var t = e.diveT;
+    var side = e.rescueSide || 1;
+    var sp = e.diveSpeed;
+    var startX = e.diveStartX != null ? e.diveStartX : e.homeX;
+    var startY = e.diveStartY != null ? e.diveStartY : e.homeY;
+
+    // Steady descent with a temporary upward hitch during the loop
+    var baseY = startY + t * sp;
+
+    // Peel toward a side early, then hold
+    var peel = side * Math.min(58, t * 2.1);
+
+    // One full loop in the middle of the dive
+    var loopX = 0;
+    var loopY = 0;
+    var loopStart = 38;
+    var loopLen = 58;
+    if (t > loopStart && t < loopStart + loopLen) {
+      var u = (t - loopStart) / loopLen;
+      var ang = u * Math.PI * 2;
+      var R = 34;
+      loopX = side * R * Math.sin(ang);
+      loopY = -R * (1 - Math.cos(ang));
+    }
+
+    // After the loop, drift back slightly toward center-ish while still biased
+    var settle = 0;
+    if (t > loopStart + loopLen) {
+      var s = Math.min(1, (t - loopStart - loopLen) / 40);
+      settle = -peel * 0.25 * s;
+    }
+
+    e.x = startX + peel + loopX + settle;
+    e.y = baseY + loopY;
+
+    // Keep on-screen horizontally during the swoop
+    if (e.x < 12) {
+      e.x = 12;
+    }
+    if (e.x > W - 12) {
+      e.x = W - 12;
     }
   }
 
   function updateReturning(e) {
+    e.prevX = e.x;
+    e.prevY = e.y;
     var dy = e.homeY - e.y;
     var dx = e.homeX + formationBob - e.x;
     var dist = Math.sqrt(dx * dx + dy * dy);
@@ -1343,6 +1439,7 @@
       e.x = e.homeX;
       e.y = e.homeY;
       e.mode = MODE_FORMATION;
+      e.rescueDive = false;
     } else {
       e.x += (dx / dist) * e.diveSpeed;
       e.y += (dy / dist) * e.diveSpeed;
@@ -1409,8 +1506,31 @@
       destroyCapturedShip(false);
       return;
     }
-    capturedShip.x = boss.x;
-    capturedShip.y = boss.y + boss.h * 0.9;
+    // Formation: hang centered under boss.
+    // Diving rescue: trail behind along the path so the captive swings clear
+    // of a vertical shot at the boss (classic Galaga clear-shot window).
+    if (boss.mode === MODE_DIVING || boss.mode === MODE_RETURNING) {
+      var vx = boss.x - (boss.prevX != null ? boss.prevX : boss.x);
+      var vy = boss.y - (boss.prevY != null ? boss.prevY : boss.y);
+      var len = Math.sqrt(vx * vx + vy * vy);
+      var trail = 18;
+      var tx;
+      var ty;
+      if (len > 0.15) {
+        tx = boss.x - (vx / len) * trail;
+        ty = boss.y - (vy / len) * trail + 4;
+      } else {
+        var sideHang = boss.rescueSide || (boss.x < W * 0.5 ? -1 : 1);
+        tx = boss.x - sideHang * 12;
+        ty = boss.y + boss.h * 0.85;
+      }
+      // Lag follow — captive swings wide on turns/loops
+      capturedShip.x += (tx - capturedShip.x) * 0.28;
+      capturedShip.y += (ty - capturedShip.y) * 0.28;
+    } else {
+      capturedShip.x = boss.x;
+      capturedShip.y = boss.y + boss.h * 0.9;
+    }
   }
 
   function findEnemyById(id) {
@@ -2178,21 +2298,29 @@
       }
     }
 
-    // Friendly-fire on captured fighter (orbit / falling / hostile)
+    // Friendly-fire on captured fighter (orbit / hostile — not while falling/joining)
     if (
       capturedShip &&
-      (capturedShip.state === "orbit" ||
-        capturedShip.state === "falling" ||
-        capturedShip.state === "hostile")
+      (capturedShip.state === "orbit" || capturedShip.state === "hostile")
     ) {
       for (i = playerBullets.length - 1; i >= 0; i--) {
         var bCap = playerBullets[i];
         var capBox = {
-          x: capturedShip.x - 8,
-          y: capturedShip.y - 8,
-          w: 16,
-          h: 16,
+          x: capturedShip.x - 6,
+          y: capturedShip.y - 6,
+          w: 12,
+          h: 12,
         };
+        // While diving, shrink further so the trail offset opens a real boss shot
+        if (capturedShip.state === "orbit") {
+          var capBoss = findEnemyById(capturedShip.bossId);
+          if (capBoss && capBoss.mode === MODE_DIVING) {
+            capBox.x = capturedShip.x - 5;
+            capBox.y = capturedShip.y - 5;
+            capBox.w = 10;
+            capBox.h = 10;
+          }
+        }
         if (rectsOverlap(bCap, capBox)) {
           playerBullets.splice(i, 1);
           destroyCapturedShip(true);
