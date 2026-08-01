@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "note": "SFW catalog for image reveal. Adult entries are ignored unless img_maturity=adult and LSL maturity notecard is trusted.",
+  "images": [
+    {
+      "id": "nebula-1",
+      "category": ["space", "nebula"],
+      "maturity": "general",
+      "url": "https://picsum.photos/seed/kicks-nebula1/600/600"
+    },
+    {
+      "id": "city-1",
+      "category": ["cyberpunk", "city"],
+      "maturity": "general",
+      "url": "https://picsum.photos/seed/kicks-city1/600/600"
+    },
+    {
+      "id": "abstract-1",
+      "category": ["abstract", "arcade"],
+      "maturity": "general",
+      "url": "https://picsum.photos/seed/kicks-abs1/600/600"
+    },
+    {
+      "id": "ocean-1",
+      "category": ["ocean", "nature"],
+      "maturity": "general",
+      "url": "https://picsum.photos/seed/kicks-ocean1/600/600"
+    },
+    {
+      "id": "neon-1",
+      "category": ["cyberpunk", "neon"],
+      "maturity": "moderate",
+      "url": "https://picsum.photos/seed/kicks-neon1/600/600"
+    }
+  ]
+}

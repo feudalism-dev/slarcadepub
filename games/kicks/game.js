@@ -1,0 +1,1369 @@
+(function () {
+  "use strict";
+
+  SLArcade.registerGameId("kicks");
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  var overlay = document.getElementById("overlay");
+  var overlayTitle = document.getElementById("overlay-title");
+  var btnStart = document.getElementById("btn-start");
+  var btnNext = document.getElementById("btn-next");
+  var btnQuit = document.getElementById("btn-quit");
+  var btnLeaderboard = document.getElementById("btn-leaderboard");
+  var btnModalClose = document.getElementById("btn-modal-close");
+  var hud = document.getElementById("hud");
+  var startScoresEl = document.getElementById("start-scores");
+  var personalEl = document.getElementById("personal-score");
+  var highScoreEl = document.getElementById("high-score");
+  var unavailableEl = document.getElementById("scores-unavailable");
+  var leaderboardEl = document.getElementById("leaderboard");
+  var leaderboardModal = document.getElementById("leaderboard-modal");
+  var messagesEl = document.getElementById("game-messages");
+  var playerLine = document.getElementById("player-line");
+  var instructionsEl = document.getElementById("instructions");
+  var endHintEl = document.getElementById("end-hint");
+
+  var WORLD = 600;
+  var COLS = 60;
+  var ROWS = 60;
+  var CELL = WORLD / COLS;
+
+  var EMPTY = 0;
+  var CLAIMED = 1;
+  var DRAWING = 2;
+
+  var PHASE_MENU = "menu";
+  var PHASE_READY = "ready";
+  var PHASE_PLAYING = "playing";
+  var PHASE_LEVEL = "level";
+  var PHASE_OVER = "gameOver";
+
+  var READY_FRAMES = 70;
+  var START_LIVES = 3;
+  var LIFE_EVERY = 50000;
+  var SPARX_TIMER_MAX = 37 * 60;
+
+  var phase = PHASE_MENU;
+  var running = false;
+  var score = 0;
+  var highScore = 0;
+  var lives = START_LIVES;
+  var level = 1;
+  var frame = 0;
+  var readyTimer = 0;
+  var lastLeaderboardData = null;
+  var lifeBonuses = 0;
+  var scoreMult = 1;
+  var fillPct = 0;
+  var targetPct = 75;
+  var banner = "";
+  var bannerT = 0;
+
+  var field = [];
+  var px = 0;
+  var py = 0;
+  var drawing = false;
+  var drawSlow = false;
+  var stix = [];
+  var stixAllSlow = true;
+  var fuseOn = false;
+  var fuseIndex = 0;
+  var moveCool = 0;
+  var invuln = 0;
+
+  var qixes = [];
+  var sparx = [];
+  var sparxTimer = SPARX_TIMER_MAX;
+  var superSparx = false;
+
+  var keys = {};
+  var revealImg = null;
+  var revealReady = false;
+  var imgCfg = {
+    provider: "catalog",
+    category: "space,cyberpunk",
+    maturity: "general",
+    custom: "",
+    seed: "1",
+  };
+  var catalogCache = null;
+
+  function parseImgConfig() {
+    var q = {};
+    try {
+      q = Object.fromEntries(new URLSearchParams(window.location.search));
+    } catch (e) {
+      q = {};
+    }
+    imgCfg.provider = (q.img_provider || "catalog").toLowerCase();
+    imgCfg.category = q.img_category || "space,cyberpunk";
+    imgCfg.maturity = (q.img_maturity || "general").toLowerCase();
+    imgCfg.custom = q.img_custom || "";
+    imgCfg.seed = q.img_seed || String(Math.floor(Math.random() * 999999));
+    if (imgCfg.maturity !== "adult" && imgCfg.maturity !== "moderate") {
+      imgCfg.maturity = "general";
+    }
+  }
+
+  function maturityRank(m) {
+    if (m === "adult") {
+      return 2;
+    }
+    if (m === "moderate") {
+      return 1;
+    }
+    return 0;
+  }
+
+  function pickCatalogUrl(data) {
+    var tags = imgCfg.category
+      .split(",")
+      .map(function (s) {
+        return s.trim().toLowerCase();
+      })
+      .filter(Boolean);
+    var maxM = maturityRank(imgCfg.maturity);
+    var pool = (data.images || []).filter(function (img) {
+      if (maturityRank(img.maturity || "general") > maxM) {
+        return false;
+      }
+      if (!tags.length) {
+        return true;
+      }
+      var cats = (img.category || []).map(function (c) {
+        return String(c).toLowerCase();
+      });
+      var i;
+      for (i = 0; i < tags.length; i++) {
+        if (cats.indexOf(tags[i]) >= 0) {
+          return true;
+        }
+      }
+      return false;
+    });
+    if (!pool.length) {
+      pool = (data.images || []).filter(function (img) {
+        return maturityRank(img.maturity || "general") <= maxM;
+      });
+    }
+    if (!pool.length) {
+      return null;
+    }
+    var idx = Math.abs(parseInt(imgCfg.seed, 10) || 0) % pool.length;
+    return pool[idx].url;
+  }
+
+  function resolveImageUrl() {
+    if (imgCfg.provider === "custom" && imgCfg.custom) {
+      return imgCfg.custom;
+    }
+    if (imgCfg.provider === "picsum") {
+      return "https://picsum.photos/seed/kicks" + imgCfg.seed + "/600/600";
+    }
+    return null;
+  }
+
+  function loadRevealImage() {
+    revealReady = false;
+    revealImg = new Image();
+    revealImg.crossOrigin = "anonymous";
+    var direct = resolveImageUrl();
+    function useUrl(url) {
+      if (!url) {
+        revealReady = false;
+        return;
+      }
+      revealImg.onload = function () {
+        revealReady = true;
+      };
+      revealImg.onerror = function () {
+        revealReady = false;
+      };
+      revealImg.src = url;
+    }
+    if (direct) {
+      useUrl(direct);
+      return;
+    }
+    if (catalogCache) {
+      useUrl(pickCatalogUrl(catalogCache));
+      return;
+    }
+    fetch("catalog.json")
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        catalogCache = data;
+        useUrl(pickCatalogUrl(data));
+      })
+      .catch(function () {
+        useUrl("https://picsum.photos/seed/kicks" + imgCfg.seed + "/600/600");
+      });
+  }
+
+  function resizeCanvas() {
+    var dw = canvas.clientWidth || window.innerWidth || WORLD;
+    var dh = canvas.clientHeight || window.innerHeight || WORLD;
+    if (dw < 1) {
+      dw = WORLD;
+    }
+    if (dh < 1) {
+      dh = WORLD;
+    }
+    if (canvas.width !== dw || canvas.height !== dh) {
+      canvas.width = dw;
+      canvas.height = dh;
+    }
+  }
+
+  function idx(x, y) {
+    return y * COLS + x;
+  }
+
+  function inBounds(x, y) {
+    return x >= 0 && y >= 0 && x < COLS && y < ROWS;
+  }
+
+  function isWalkable(x, y) {
+    if (!inBounds(x, y)) {
+      return false;
+    }
+    return field[idx(x, y)] === CLAIMED;
+  }
+
+  function isOpen(x, y) {
+    return inBounds(x, y) && field[idx(x, y)] === EMPTY;
+  }
+
+  function initField() {
+    field = new Array(COLS * ROWS);
+    var x;
+    var y;
+    for (y = 0; y < ROWS; y++) {
+      for (x = 0; x < COLS; x++) {
+        if (x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1) {
+          field[idx(x, y)] = CLAIMED;
+        } else {
+          field[idx(x, y)] = EMPTY;
+        }
+      }
+    }
+    px = Math.floor(COLS / 2);
+    py = 0;
+    drawing = false;
+    stix = [];
+    stixAllSlow = true;
+    fuseOn = false;
+    fuseIndex = 0;
+    fillPct = calcFillPct();
+  }
+
+  function calcFillPct() {
+    var claimed = 0;
+    var playable = (COLS - 2) * (ROWS - 2);
+    var i;
+    for (i = 0; i < field.length; i++) {
+      var x = i % COLS;
+      var y = (i / COLS) | 0;
+      if (x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1) {
+        continue;
+      }
+      if (field[i] === CLAIMED) {
+        claimed++;
+      }
+    }
+    if (playable <= 0) {
+      return 100;
+    }
+    return Math.floor((claimed / playable) * 1000) / 10;
+  }
+
+  function levelTarget(n) {
+    var t = 75 + Math.floor((n - 1) / 3);
+    if (t > 90) {
+      t = 90;
+    }
+    return t;
+  }
+
+  function qixCountForLevel(n) {
+    if (n >= 3) {
+      return 2;
+    }
+    return 1;
+  }
+
+  function spawnQixes() {
+    qixes = [];
+    var n = qixCountForLevel(level);
+    var i;
+    for (i = 0; i < n; i++) {
+      qixes.push({
+        x: COLS * 0.3 + i * 12 + Math.random() * 8,
+        y: ROWS * 0.35 + Math.random() * 10,
+        vx: (Math.random() < 0.5 ? -1 : 1) * (0.12 + level * 0.015),
+        vy: (Math.random() < 0.5 ? -1 : 1) * (0.12 + level * 0.015),
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function spawnSparxPair() {
+    sparx.push({
+      x: 0,
+      y: 0,
+      dir: 0,
+      super: superSparx,
+    });
+    sparx.push({
+      x: COLS - 1,
+      y: 0,
+      dir: 1,
+      super: superSparx,
+    });
+  }
+
+  function resetSparx() {
+    sparx = [];
+    sparxTimer = Math.max(20 * 60, SPARX_TIMER_MAX - level * 90);
+    superSparx = false;
+    spawnSparxPair();
+  }
+
+  function updateHud() {
+    hud.textContent =
+      "SCORE " +
+      score +
+      "   HI " +
+      highScore +
+      "   LIVES " +
+      lives +
+      "   LV " +
+      level +
+      "\nFILL " +
+      fillPct.toFixed(1) +
+      "% / " +
+      targetPct +
+      "%   ×" +
+      scoreMult +
+      (drawing ? (drawSlow ? "   SLOW DRAW" : "   FAST DRAW") : "   SAFE") +
+      (bannerT > 0 ? "\n" + banner : "");
+  }
+
+  function setOverlayButtons(showStart, showNext) {
+    btnStart.classList.toggle("hidden", !showStart);
+    btnNext.classList.toggle("hidden", !showNext);
+  }
+
+  function setQuitVisible(v) {
+    btnQuit.classList.toggle("hidden", !v);
+  }
+
+  function setStartScreenExtras(v) {
+    startScoresEl.classList.toggle("hidden", !v);
+    btnLeaderboard.classList.toggle("hidden", !v);
+    if (!v) {
+      leaderboardModal.classList.add("hidden");
+    }
+  }
+
+  function showMenuOverlay() {
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = "KICKS";
+    instructionsEl.textContent =
+      "Claim territory to reveal the image. Arrows/WASD move. Hold Z=slow draw (2×), X=fast draw. Close loops away from the Qix. Sparx patrol edges.";
+    endHintEl.textContent = "";
+    btnStart.disabled = false;
+    btnStart.textContent = "START";
+    setOverlayButtons(true, false);
+    setStartScreenExtras(true);
+    setQuitVisible(false);
+    if (lastLeaderboardData) {
+      updateStartScores(lastLeaderboardData);
+    }
+  }
+
+  function beginReady(title, hint) {
+    phase = PHASE_READY;
+    running = false;
+    readyTimer = READY_FRAMES;
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = title || "GET READY";
+    instructionsEl.textContent = hint || "";
+    endHintEl.textContent = "";
+    setOverlayButtons(false, false);
+    setStartScreenExtras(false);
+    setQuitVisible(true);
+  }
+
+  function showLevelClear(overPct, splitBonus) {
+    phase = PHASE_LEVEL;
+    running = false;
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = splitBonus ? "QIX SPLIT!" : "LEVEL CLEAR";
+    var msg =
+      "Fill " +
+      fillPct.toFixed(1) +
+      "% — Target " +
+      targetPct +
+      "%";
+    if (overPct > 0) {
+      msg += " — Overage +" + overPct * 1000;
+    }
+    if (splitBonus) {
+      msg += " — Multiplier now ×" + scoreMult;
+    }
+    instructionsEl.textContent = msg;
+    endHintEl.textContent = "";
+    btnNext.textContent = "NEXT LEVEL";
+    setOverlayButtons(false, true);
+    setStartScreenExtras(false);
+    setQuitVisible(true);
+  }
+
+  function cellCenter(x, y) {
+    return { x: (x + 0.5) * CELL, y: (y + 0.5) * CELL };
+  }
+
+  function tryMove(dx, dy) {
+    if (moveCool > 0 || invuln > 0) {
+      return;
+    }
+    var nx = px + dx;
+    var ny = py + dy;
+    if (!inBounds(nx, ny)) {
+      return;
+    }
+    var wantDraw = keys.z || keys.Z || keys.x || keys.X;
+    drawSlow = !!(keys.z || keys.Z);
+
+    if (!wantDraw) {
+      if (!isWalkable(nx, ny)) {
+        return;
+      }
+      if (drawing) {
+        return;
+      }
+      px = nx;
+      py = ny;
+      moveCool = 2;
+      fuseOn = false;
+      return;
+    }
+
+    // Start or continue drawing into open / along stix tip
+    if (!drawing) {
+      if (!isWalkable(px, py)) {
+        return;
+      }
+      if (!isOpen(nx, ny)) {
+        return;
+      }
+      drawing = true;
+      stix = [{ x: px, y: py }];
+      stixAllSlow = drawSlow;
+      fuseOn = false;
+      fuseIndex = 0;
+    }
+
+    if (nx === px && ny === py) {
+      return;
+    }
+    // No reverse along stix
+    if (stix.length >= 2) {
+      var prev = stix[stix.length - 2];
+      if (prev.x === nx && prev.y === ny) {
+        return;
+      }
+    }
+    // Cannot cross own stix (spiral death → fuse)
+    var i;
+    for (i = 0; i < stix.length; i++) {
+      if (stix[i].x === nx && stix[i].y === ny) {
+        fuseOn = true;
+        return;
+      }
+    }
+
+    if (isOpen(nx, ny)) {
+      if (!drawSlow) {
+        stixAllSlow = false;
+      }
+      field[idx(nx, ny)] = DRAWING;
+      stix.push({ x: nx, y: ny });
+      px = nx;
+      py = ny;
+      moveCool = drawSlow ? 5 : 2;
+      fuseOn = false;
+      return;
+    }
+
+    if (isWalkable(nx, ny) && drawing && stix.length > 1) {
+      stix.push({ x: nx, y: ny });
+      px = nx;
+      py = ny;
+      completeClaim();
+      moveCool = 3;
+    }
+  }
+
+  function flood(sx, sy, mark) {
+    if (!isOpen(sx, sy) && field[idx(sx, sy)] !== DRAWING) {
+      return 0;
+    }
+    var stack = [[sx, sy]];
+    var count = 0;
+    var seen = {};
+    while (stack.length) {
+      var p = stack.pop();
+      var x = p[0];
+      var y = p[1];
+      var k = x + "," + y;
+      if (seen[k]) {
+        continue;
+      }
+      if (!inBounds(x, y)) {
+        continue;
+      }
+      if (field[idx(x, y)] !== EMPTY && field[idx(x, y)] !== DRAWING) {
+        continue;
+      }
+      seen[k] = 1;
+      mark.push({ x: x, y: y });
+      count++;
+      stack.push([x + 1, y]);
+      stack.push([x - 1, y]);
+      stack.push([x, y + 1]);
+      stack.push([x, y - 1]);
+    }
+    return count;
+  }
+
+  function qixCell(q) {
+    return { x: Math.floor(q.x), y: Math.floor(q.y) };
+  }
+
+  function completeClaim() {
+    var i;
+    // Convert DRAWING to temporary wall for flood
+    for (i = 0; i < stix.length; i++) {
+      var s = stix[i];
+      if (field[idx(s.x, s.y)] === DRAWING) {
+        field[idx(s.x, s.y)] = CLAIMED;
+      }
+    }
+
+    // Find open regions
+    var regions = [];
+    var visited = {};
+    var x;
+    var y;
+    for (y = 1; y < ROWS - 1; y++) {
+      for (x = 1; x < COLS - 1; x++) {
+        if (field[idx(x, y)] !== EMPTY) {
+          continue;
+        }
+        var key = x + "," + y;
+        if (visited[key]) {
+          continue;
+        }
+        var cells = [];
+        floodRegion(x, y, cells, visited);
+        if (cells.length) {
+          regions.push(cells);
+        }
+      }
+    }
+
+    var qixRegions = {};
+    for (i = 0; i < qixes.length; i++) {
+      var qc = qixCell(qixes[i]);
+      var r;
+      for (r = 0; r < regions.length; r++) {
+        var hit = false;
+        var j;
+        for (j = 0; j < regions[r].length; j++) {
+          if (regions[r][j].x === qc.x && regions[r][j].y === qc.y) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) {
+          qixRegions[r] = true;
+        }
+      }
+    }
+
+    var claimedCells = 0;
+    for (i = 0; i < regions.length; i++) {
+      if (qixRegions[i]) {
+        continue;
+      }
+      var c;
+      for (c = 0; c < regions[i].length; c++) {
+        field[idx(regions[i][c].x, regions[i][c].y)] = CLAIMED;
+        claimedCells++;
+      }
+    }
+
+    // Clear any leftover DRAWING
+    for (i = 0; i < field.length; i++) {
+      if (field[i] === DRAWING) {
+        field[i] = EMPTY;
+      }
+    }
+
+    var pctGain =
+      Math.floor((claimedCells / ((COLS - 2) * (ROWS - 2))) * 1000) / 10;
+    var base = stixAllSlow ? 200 : 100;
+    var pts = Math.floor(base * pctGain * scoreMult);
+    score += pts;
+    if (score > highScore) {
+      highScore = score;
+    }
+    checkLifeBonus();
+    banner = "+" + pts + (stixAllSlow ? " SLOW" : " FAST");
+    bannerT = 90;
+
+    drawing = false;
+    stix = [];
+    fuseOn = false;
+    fillPct = calcFillPct();
+    updateHud();
+
+    // Dual Qix split?
+    if (qixes.length >= 2 && regions.length >= 2) {
+      var occupied = 0;
+      for (i = 0; i < regions.length; i++) {
+        if (qixRegions[i]) {
+          occupied++;
+        }
+      }
+      if (occupied >= 2) {
+        if (scoreMult < 9) {
+          scoreMult++;
+        }
+        banner = "QIX SPLIT — MULTIPLIER ×" + scoreMult;
+        bannerT = 120;
+        showLevelClear(0, true);
+        return;
+      }
+    }
+
+    if (fillPct >= targetPct) {
+      var over = Math.floor(fillPct - targetPct);
+      if (over < 0) {
+        over = 0;
+      }
+      score += over * 1000;
+      if (fillPct >= 99) {
+        score += 25000;
+      }
+      if (score > highScore) {
+        highScore = score;
+      }
+      checkLifeBonus();
+      showLevelClear(over, false);
+    }
+  }
+
+  function floodRegion(sx, sy, out, visited) {
+    var stack = [[sx, sy]];
+    while (stack.length) {
+      var p = stack.pop();
+      var x = p[0];
+      var y = p[1];
+      var k = x + "," + y;
+      if (visited[k]) {
+        continue;
+      }
+      if (!inBounds(x, y) || field[idx(x, y)] !== EMPTY) {
+        continue;
+      }
+      visited[k] = 1;
+      out.push({ x: x, y: y });
+      stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
+  }
+
+  function checkLifeBonus() {
+    var earned = Math.floor(score / LIFE_EVERY);
+    if (earned > lifeBonuses) {
+      lives += earned - lifeBonuses;
+      lifeBonuses = earned;
+      banner = "EXTRA LIFE!";
+      bannerT = 100;
+    }
+  }
+
+  function killPlayer(reason) {
+    if (invuln > 0 || phase !== PHASE_PLAYING) {
+      return;
+    }
+    // Clear stix
+    var i;
+    for (i = 0; i < field.length; i++) {
+      if (field[i] === DRAWING) {
+        field[i] = EMPTY;
+      }
+    }
+    drawing = false;
+    stix = [];
+    fuseOn = false;
+    lives--;
+    banner = reason || "HIT!";
+    bannerT = 100;
+    updateHud();
+    if (lives <= 0) {
+      gameOver();
+      return;
+    }
+    px = Math.floor(COLS / 2);
+    py = 0;
+    invuln = 90;
+  }
+
+  function updateQix(q) {
+    q.phase += 0.08;
+    q.x += q.vx;
+    q.y += q.vy;
+    var cx = Math.floor(q.x);
+    var cy = Math.floor(q.y);
+    if (!isOpen(cx, cy)) {
+      q.x -= q.vx;
+      q.y -= q.vy;
+      if (Math.random() < 0.5) {
+        q.vx = -q.vx;
+      } else {
+        q.vy = -q.vy;
+      }
+      if (Math.random() < 0.2) {
+        q.vx += (Math.random() - 0.5) * 0.04;
+        q.vy += (Math.random() - 0.5) * 0.04;
+      }
+    }
+    // Stay in open
+    cx = Math.floor(q.x);
+    cy = Math.floor(q.y);
+    if (!isOpen(cx, cy)) {
+      q.x = COLS * 0.5;
+      q.y = ROWS * 0.5;
+      while (!isOpen(Math.floor(q.x), Math.floor(q.y))) {
+        q.x = 2 + Math.random() * (COLS - 4);
+        q.y = 2 + Math.random() * (ROWS - 4);
+      }
+    }
+  }
+
+  function perimeterNeighbors(x, y) {
+    var dirs = [
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+      [0, -1],
+    ];
+    var out = [];
+    var i;
+    for (i = 0; i < 4; i++) {
+      var nx = x + dirs[i][0];
+      var ny = y + dirs[i][1];
+      if (!isWalkable(nx, ny)) {
+        continue;
+      }
+      // Prefer cells adjacent to open/drawing
+      var edge =
+        isOpen(nx + 1, ny) ||
+        isOpen(nx - 1, ny) ||
+        isOpen(nx, ny + 1) ||
+        isOpen(nx, ny - 1) ||
+        field[idx(nx, ny)] === CLAIMED;
+      if (edge) {
+        out.push({ x: nx, y: ny });
+      }
+    }
+    if (!out.length) {
+      for (i = 0; i < 4; i++) {
+        var ax = x + dirs[i][0];
+        var ay = y + dirs[i][1];
+        if (isWalkable(ax, ay)) {
+          out.push({ x: ax, y: ay });
+        }
+      }
+    }
+    return out;
+  }
+
+  function updateSparxEntity(s) {
+    var speed = s.super ? 2 : 1;
+    var step;
+    for (step = 0; step < speed; step++) {
+      var opts = perimeterNeighbors(s.x, s.y);
+      if (!opts.length) {
+        return;
+      }
+      // Bias toward player
+      var best = opts[0];
+      var bestD = 1e9;
+      var i;
+      for (i = 0; i < opts.length; i++) {
+        var d = Math.abs(opts[i].x - px) + Math.abs(opts[i].y - py);
+        if (s.dir) {
+          d = -d;
+        }
+        // Mild chase
+        var scoreD = Math.abs(opts[i].x - px) + Math.abs(opts[i].y - py);
+        if (Math.random() < 0.7) {
+          if (scoreD < bestD) {
+            bestD = scoreD;
+            best = opts[i];
+          }
+        } else if (Math.random() < 0.3) {
+          best = opts[i];
+          break;
+        }
+      }
+      s.x = best.x;
+      s.y = best.y;
+      if (s.super && drawing) {
+        // Super sparx can step onto stix tip cells near player
+        var j;
+        for (j = 0; j < stix.length; j++) {
+          if (Math.abs(stix[j].x - s.x) + Math.abs(stix[j].y - s.y) <= 1) {
+            if (stix[j].x === px && stix[j].y === py) {
+              killPlayer("SUPER SPARX!");
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function segmentHitsQix() {
+    if (!drawing || !stix.length) {
+      return false;
+    }
+    var i;
+    var q;
+    for (q = 0; q < qixes.length; q++) {
+      var qx = qixes[q].x;
+      var qy = qixes[q].y;
+      for (i = 0; i < stix.length; i++) {
+        var sx = stix[i].x + 0.5;
+        var sy = stix[i].y + 0.5;
+        if (Math.abs(sx - qx) < 0.85 && Math.abs(sy - qy) < 0.85) {
+          return true;
+        }
+      }
+      if (drawing && Math.abs(px + 0.5 - qx) < 0.9 && Math.abs(py + 0.5 - qy) < 0.9) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function updatePlaying() {
+    frame++;
+    if (moveCool > 0) {
+      moveCool--;
+    }
+    if (invuln > 0) {
+      invuln--;
+    }
+    if (bannerT > 0) {
+      bannerT--;
+    }
+
+    var dx = 0;
+    var dy = 0;
+    if (keys.ArrowLeft || keys.a || keys.A) {
+      dx = -1;
+    } else if (keys.ArrowRight || keys.d || keys.D) {
+      dx = 1;
+    } else if (keys.ArrowUp || keys.w || keys.W) {
+      dy = -1;
+    } else if (keys.ArrowDown || keys.s || keys.S) {
+      dy = 1;
+    }
+    if (dx || dy) {
+      tryMove(dx, dy);
+    } else if (drawing) {
+      fuseOn = true;
+    }
+
+    if (fuseOn && drawing) {
+      fuseIndex += 0.35;
+      if (fuseIndex >= stix.length) {
+        killPlayer("FUSE!");
+      }
+    } else if (!drawing) {
+      fuseIndex = 0;
+    }
+
+    var qi;
+    for (qi = 0; qi < qixes.length; qi++) {
+      updateQix(qixes[qi]);
+    }
+    if (segmentHitsQix()) {
+      killPlayer("QIX!");
+      return;
+    }
+
+    sparxTimer--;
+    if (sparxTimer <= 0) {
+      sparxTimer = Math.max(18 * 60, SPARX_TIMER_MAX - level * 100);
+      if (sparx.length >= 4) {
+        superSparx = true;
+        var si;
+        for (si = 0; si < sparx.length; si++) {
+          sparx[si].super = true;
+        }
+        banner = "SUPER SPARX!";
+        bannerT = 100;
+      } else {
+        spawnSparxPair();
+      }
+    }
+    for (qi = 0; qi < sparx.length; qi++) {
+      updateSparxEntity(sparx[qi]);
+      if (sparx[qi].x === px && sparx[qi].y === py && invuln <= 0) {
+        killPlayer("SPARX!");
+        return;
+      }
+    }
+
+    fillPct = calcFillPct();
+    updateHud();
+  }
+
+  function drawWorld() {
+    resizeCanvas();
+    var scale = Math.min(canvas.width / WORLD, canvas.height / WORLD);
+    var ox = (canvas.width - WORLD * scale) / 2;
+    var oy = (canvas.height - WORLD * scale) / 2;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#04060e";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.translate(ox, oy);
+    ctx.scale(scale, scale);
+
+    // Unclaimed fog
+    ctx.fillStyle = "#0a1020";
+    ctx.fillRect(0, 0, WORLD, WORLD);
+
+    // Revealed image in claimed cells
+    var x;
+    var y;
+    if (revealReady && revealImg) {
+      for (y = 0; y < ROWS; y++) {
+        for (x = 0; x < COLS; x++) {
+          if (field[idx(x, y)] !== CLAIMED) {
+            continue;
+          }
+          var sx = (x / COLS) * revealImg.width;
+          var sy = (y / ROWS) * revealImg.height;
+          var sw = revealImg.width / COLS;
+          var sh = revealImg.height / ROWS;
+          ctx.drawImage(
+            revealImg,
+            sx,
+            sy,
+            sw,
+            sh,
+            x * CELL,
+            y * CELL,
+            CELL + 0.5,
+            CELL + 0.5
+          );
+        }
+      }
+      // Soft tint edge on claimed
+      ctx.fillStyle = "rgba(61, 240, 255, 0.06)";
+      for (y = 0; y < ROWS; y++) {
+        for (x = 0; x < COLS; x++) {
+          if (field[idx(x, y)] === CLAIMED) {
+            ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+          }
+        }
+      }
+    } else {
+      ctx.fillStyle = "#152238";
+      for (y = 0; y < ROWS; y++) {
+        for (x = 0; x < COLS; x++) {
+          if (field[idx(x, y)] === CLAIMED) {
+            ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+          }
+        }
+      }
+    }
+
+    // Grid haze on open
+    ctx.strokeStyle = "rgba(80, 120, 180, 0.12)";
+    ctx.lineWidth = 1;
+    for (x = 0; x <= COLS; x += 4) {
+      ctx.beginPath();
+      ctx.moveTo(x * CELL, 0);
+      ctx.lineTo(x * CELL, WORLD);
+      ctx.stroke();
+    }
+    for (y = 0; y <= ROWS; y += 4) {
+      ctx.beginPath();
+      ctx.moveTo(0, y * CELL);
+      ctx.lineTo(WORLD, y * CELL);
+      ctx.stroke();
+    }
+
+    // Active stix
+    if (stix.length) {
+      ctx.strokeStyle = stixAllSlow ? "#ffb84a" : "#3df0ff";
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = ctx.strokeStyle;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      var p0 = cellCenter(stix[0].x, stix[0].y);
+      ctx.moveTo(p0.x, p0.y);
+      for (x = 1; x < stix.length; x++) {
+        var p = cellCenter(stix[x].x, stix[x].y);
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.lineTo((px + 0.5) * CELL, (py + 0.5) * CELL);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Fuse
+    if (fuseOn && stix.length) {
+      var fi = Math.min(stix.length - 1, Math.floor(fuseIndex));
+      var f = cellCenter(stix[fi].x, stix[fi].y);
+      ctx.fillStyle = "#ff4d6d";
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Qix — modern ribbon geometry
+    for (y = 0; y < qixes.length; y++) {
+      drawQix(qixes[y]);
+    }
+
+    // Sparx
+    for (x = 0; x < sparx.length; x++) {
+      var sp = sparx[x];
+      var sc = cellCenter(sp.x, sp.y);
+      ctx.fillStyle = sp.super ? "#ff4d6d" : "#a78bfa";
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(sc.x, sc.y - 4);
+      ctx.lineTo(sc.x + 4, sc.y);
+      ctx.lineTo(sc.x, sc.y + 4);
+      ctx.lineTo(sc.x - 4, sc.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Player cursor
+    if (invuln <= 0 || Math.floor(invuln / 4) % 2 === 0) {
+      var pc = cellCenter(px, py);
+      ctx.strokeStyle = drawing ? (drawSlow ? "#ffb84a" : "#3df0ff") : "#ffffff";
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(pc.x, pc.y - 6);
+      ctx.lineTo(pc.x + 6, pc.y);
+      ctx.lineTo(pc.x, pc.y + 6);
+      ctx.lineTo(pc.x - 6, pc.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Sparx meter
+    var meterW = WORLD * 0.5;
+    var meterX = (WORLD - meterW) / 2;
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(meterX, 4, meterW, 6);
+    ctx.fillStyle = superSparx ? "#ff4d6d" : "#ff6b6b";
+    ctx.fillRect(meterX, 4, meterW * (sparxTimer / SPARX_TIMER_MAX), 6);
+  }
+
+  function drawQix(q) {
+    var cx = q.x * CELL;
+    var cy = q.y * CELL;
+    var t = q.phase;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = "rgba(167, 139, 250, 0.9)";
+    ctx.lineWidth = 2;
+    ctx.shadowColor = "#a78bfa";
+    ctx.shadowBlur = 12;
+    var k;
+    for (k = 0; k < 5; k++) {
+      var a0 = t + k * 1.1;
+      var r0 = 10 + k * 3;
+      var r1 = 18 + k * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a0) * r0, Math.sin(a0) * r0);
+      ctx.lineTo(Math.cos(a0 + 0.8) * r1, Math.sin(a0 + 1.2) * r1);
+      ctx.lineTo(Math.cos(a0 + 1.7) * r0, Math.sin(a0 + 2.1) * r0);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(61, 240, 255, 0.35)";
+    ctx.beginPath();
+    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+
+  function startLevel() {
+    targetPct = levelTarget(level);
+    initField();
+    spawnQixes();
+    resetSparx();
+    imgCfg.seed = String(
+      (parseInt(imgCfg.seed, 10) || 0) + level * 9973
+    );
+    loadRevealImage();
+    fillPct = calcFillPct();
+    updateHud();
+    beginReady(
+      "LEVEL " + level,
+      "Claim " + targetPct + "% — Z slow / X fast draw. Multiplier ×" + scoreMult
+    );
+  }
+
+  function startGame() {
+    if (btnStart.disabled) {
+      return;
+    }
+    score = 0;
+    lives = START_LIVES;
+    level = 1;
+    lifeBonuses = 0;
+    scoreMult = 1;
+    frame = 0;
+    showMessages([]);
+    unavailableEl.classList.add("hidden");
+    endHintEl.textContent = "";
+    startLevel();
+  }
+
+  function nextLevel() {
+    level++;
+    startLevel();
+  }
+
+  function gameOver() {
+    phase = PHASE_OVER;
+    running = false;
+    overlay.classList.remove("hidden");
+    overlayTitle.textContent = "GAME OVER";
+    instructionsEl.textContent = "Final score: " + score + " — Level " + level;
+    btnStart.textContent = "SAVING…";
+    btnStart.disabled = true;
+    setOverlayButtons(true, false);
+    setStartScreenExtras(false);
+    setQuitVisible(false);
+    SLArcade.submitScore(score)
+      .then(function (result) {
+        if (result && result.pendingMoapReport) {
+          return;
+        }
+        showMessages(result.messages || []);
+        if (result.unavailableMessage) {
+          unavailableEl.textContent = result.unavailableMessage;
+          unavailableEl.classList.remove("hidden");
+        }
+        return refreshLeaderboard();
+      })
+      .then(function () {
+        if (SLArcade.isHudMode()) {
+          phase = PHASE_MENU;
+          showMenuOverlay();
+          endHintEl.textContent = "Last score: " + score + " — tap START.";
+        } else {
+          btnStart.textContent = "PLAY AGAIN";
+          btnStart.disabled = false;
+          endHintEl.textContent = "Click cabinet in-world for a new session.";
+          setTimeout(function () {
+            if (SLArcade.canEndSession()) {
+              SLArcade.endSession().catch(function () {});
+            }
+          }, 2000);
+        }
+      })
+      .catch(function () {
+        unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
+        unavailableEl.classList.remove("hidden");
+        btnStart.textContent = "PLAY AGAIN";
+        btnStart.disabled = false;
+      });
+  }
+
+  function quitGame() {
+    if (phase === PHASE_MENU || phase === PHASE_OVER) {
+      return;
+    }
+    phase = PHASE_MENU;
+    running = false;
+    showMenuOverlay();
+    SLArcade.endSession().catch(function () {});
+  }
+
+  function showMessages(list) {
+    messagesEl.innerHTML = "";
+    var i;
+    for (i = 0; i < list.length; i++) {
+      var d = document.createElement("div");
+      d.textContent = list[i];
+      messagesEl.appendChild(d);
+    }
+  }
+
+  function formatTopScore(scoreVal, enabled) {
+    if (!enabled || !scoreVal) {
+      return "Your top score: —";
+    }
+    return "Your top score: " + scoreVal;
+  }
+
+  function formatHighScore(entries, enabled) {
+    if (!enabled || !entries || !entries.length) {
+      return "High score: —";
+    }
+    return "High score: " + entries[0].score;
+  }
+
+  function updateStartScores(data) {
+    var enabled = !!data.scoresEnabled;
+    personalEl.textContent = formatTopScore(data.personalScore || 0, enabled);
+    highScoreEl.textContent = formatHighScore(data.entries || [], enabled);
+    if (data.entries && data.entries[0]) {
+      highScore = Math.max(highScore, data.entries[0].score || 0);
+    }
+    if (!enabled || data.unavailableMessage) {
+      unavailableEl.textContent =
+        data.unavailableMessage || SLArcade.SCORES_UNAVAILABLE_MSG;
+      unavailableEl.classList.remove("hidden");
+      startScoresEl.classList.add("hidden");
+      btnLeaderboard.classList.add("hidden");
+      return;
+    }
+    unavailableEl.classList.add("hidden");
+    startScoresEl.classList.remove("hidden");
+    if (phase === PHASE_MENU) {
+      btnLeaderboard.classList.remove("hidden");
+    }
+  }
+
+  function refreshLeaderboard() {
+    return SLArcade.getLeaderboard().then(function (data) {
+      lastLeaderboardData = data;
+      updateStartScores(data);
+      renderLeaderboardList(data.entries || []);
+      return data;
+    });
+  }
+
+  function renderLeaderboardList(entries) {
+    leaderboardEl.innerHTML = "";
+    var i;
+    for (i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var li = document.createElement("li");
+      li.innerHTML =
+        '<span class="rank">' +
+        e.rank +
+        '.</span><span class="name"></span><span class="score"></span>';
+      li.querySelector(".name").textContent = e.name;
+      li.querySelector(".score").textContent = String(e.score);
+      leaderboardEl.appendChild(li);
+    }
+  }
+
+  function syncPlayerLine() {
+    var s = SLArcade.getSession();
+    if (s.name) {
+      playerLine.textContent = "Player: " + s.name;
+    }
+  }
+
+  function grabFocus() {
+    try {
+      canvas.focus();
+    } catch (e) {}
+  }
+
+  function loop() {
+    if (phase === PHASE_READY) {
+      readyTimer--;
+      if (readyTimer <= 0) {
+        phase = PHASE_PLAYING;
+        running = true;
+        overlay.classList.add("hidden");
+        setQuitVisible(true);
+        grabFocus();
+      } else if (readyTimer < 40) {
+        overlayTitle.textContent = "GO!";
+      }
+    } else if (phase === PHASE_PLAYING && running) {
+      updatePlaying();
+    }
+    drawWorld();
+    requestAnimationFrame(loop);
+  }
+
+  function onKey(e, down) {
+    keys[e.key] = down;
+    if (down && (e.key === "Escape" || e.key === "Esc")) {
+      quitGame();
+    }
+    if (
+      down &&
+      (e.key === "ArrowUp" ||
+        e.key === "ArrowDown" ||
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowRight" ||
+        e.key === " ")
+    ) {
+      e.preventDefault();
+    }
+  }
+
+  btnStart.addEventListener("click", startGame);
+  btnNext.addEventListener("click", nextLevel);
+  btnQuit.addEventListener("click", quitGame);
+  btnLeaderboard.addEventListener("click", function () {
+    leaderboardModal.classList.remove("hidden");
+    refreshLeaderboard();
+  });
+  btnModalClose.addEventListener("click", function () {
+    leaderboardModal.classList.add("hidden");
+  });
+  window.addEventListener("keydown", function (e) {
+    onKey(e, true);
+  });
+  window.addEventListener("keyup", function (e) {
+    onKey(e, false);
+  });
+  canvas.addEventListener("mousedown", grabFocus);
+  window.addEventListener("resize", resizeCanvas);
+
+  parseImgConfig();
+  loadRevealImage();
+  initField();
+  resizeCanvas();
+  showMenuOverlay();
+  syncPlayerLine();
+  refreshLeaderboard().catch(function () {});
+  SLArcade.onSession(function () {
+    syncPlayerLine();
+    refreshLeaderboard().catch(function () {});
+  });
+  requestAnimationFrame(loop);
+})();

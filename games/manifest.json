@@ -56,6 +56,13 @@
       "description": "Periscope combat against surface ships — Sea Wolf–style naval arcade action.",
       "url": "games/seawolf/",
       "status": "available"
+    },
+    {
+      "id": "kicks",
+      "title": "Kicks",
+      "description": "Claim territory, dodge the Qix, reveal the image — modern Qix-style arcade.",
+      "url": "games/kicks/",
+      "status": "available"
     }
   ]
 }
