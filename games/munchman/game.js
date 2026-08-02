@@ -30,11 +30,11 @@
 
   var COLS = 28;
   var ROWS = 31;
-  var TUNNEL_ROW = 14;
-  var TUNNEL_LEFT_COL = 6;
-  var TUNNEL_RIGHT_COL = 21;
-  var PEN_ROW_TOP = 12;
-  var PEN_ROW_MID = 15;
+  var TUNNEL_ROW = 13;
+  var TUNNEL_LEFT_COL = 0;
+  var TUNNEL_RIGHT_COL = 27;
+  var PEN_ROW_TOP = 11;
+  var PEN_ROW_MID = 14;
   var PEN_ROW_BOT = 17;
   var PEN_GATE_ROW = 10;
   var PEN_EXIT_ROW = 9;
@@ -59,10 +59,12 @@
   var OFF_Y = TOP_PAD + Math.floor((H - TOP_PAD - BOTTOM_PAD - MAZE_H) / 2);
   var SNAP_THRESHOLD = 2;
   var MAX_FRAME_MS = 50;
-  var PLAYER_PIXELS_PER_SEC = 60;
-  var GHOST_PIXELS_PER_SEC = 55;
-  var FRIGHTENED_PIXELS_PER_SEC = 40;
-  var EATEN_GHOST_PIXELS_PER_SEC = 120;
+  var BASE_SPEED = 80; // pixels per second at level 1
+  var PLAYER_SPEED_MULT = 0.80; // Pac-Man is 80% of base
+  var GHOST_SPEED_MULT = 1.00;  // Ghosts at 100% in chase
+  var FRIGHTENED_SPEED_MULT = 0.50;
+  var EATEN_SPEED_MULT = 2.00;
+  var CORNER_BOOST_MULT = 1.15; // Pac-Man corners 15% faster
   var WALL_COLOR = "#2121ff";
   var WALL_LINE = Math.max(1, Math.round(TILE * 0.14));
   var GATE_COLOR = "#ffb8ff";
@@ -107,6 +109,12 @@
   var DOT_POINTS = 10;
   var POWER_POINTS = 50;
   var GHOST_BASE_POINTS = 200;
+  var FRUIT_SCORES = [100, 300, 500, 700, 1000, 2000, 3000, 5000]; // Cherry, Strawberry, Orange, Apple, Melon, Galaxian, Bell, Key
+  var FRUIT_TYPES = ["🍒", "🍓", "🍊", "🍎", "🍈", "🛸", "🔔", "🔑"];
+  var FRUIT_SPAWN_DOTS = [174, 74]; // Dots remaining when fruit spawns (2 per level)
+  var fruit = null;
+  var fruitTimer = 0;
+  var FRUIT_LIFETIME_MS = 10000;
 
   var MAZE_TEMPLATE = [
     "############################",
@@ -118,17 +126,17 @@
     "#.####.##.########.##.####.#",
     "#.####.##.########.##.####.#",
     "#......##....##....##......#",
-    "######.##### ## #####.######",
-    "     #.##### -- #####.#     ",
-    "     #.##    G    ##.#      ",
-    "     #.## ######## ##.#     ",
-    "######.## #      # ##.######",
-    "      .   #      #   .      ",
-    "######.## #      # ##.######",
-    "     #.## ######## ##.#     ",
-    "     #.##    G    ##.#      ",
-    "     #.## ######## ##.#     ",
-    "######.## ######## ##.######",
+    "######.#####.##.#####.######",
+    "     #.#####.##.#####.#     ",
+    "     #.##......##..##.#     ",
+    "     #.##.########.##.#     ",
+    "######.##.#      #.##.######",
+    "      .  #      #  .       ",
+    "######.##.#      #.##.######",
+    "     #.##.########.##.#     ",
+    "     #.##..........##.#     ",
+    "     #.##.########.##.#     ",
+    "######.##.########.##.######",
     "#............##............#",
     "#.####.#####.##.#####.####.#",
     "#.####.#####.##.#####.####.#",
@@ -151,10 +159,10 @@
 
   var GHOST_COLORS = ["#f44", "#ffb8de", "#0ff", "#ffb852"];
   var GHOST_PEN_SLOTS = [
+    { c: 13, r: 14 },
+    { c: 11, r: 14 },
+    { c: 15, r: 14 },
     { c: 13, r: 15 },
-    { c: 11, r: 15 },
-    { c: 15, r: 15 },
-    { c: 13, r: 16 },
   ];
   var GHOST_NAMES = ["Crimson", "Rose", "Azure", "Amber"];
 
@@ -170,6 +178,19 @@
   var continueDeadline = 0;
   var continueTimerId = null;
   var lastLeaderboardData = null;
+  var deathAnimFrame = 0;
+  var deathAnimating = false;
+  var levelFlashCount = 0;
+  var levelFlashing = false;
+
+  // Level speed multipliers (approximate original Pac-Man)
+  var LEVEL_SPEEDS = [
+    { player: 0.80, ghost: 1.00, frightened: 0.50 }, // 1
+    { player: 0.90, ghost: 1.05, frightened: 0.55 }, // 2
+    { player: 0.95, ghost: 1.10, frightened: 0.60 }, // 3
+    { player: 1.00, ghost: 1.15, frightened: 0.65 }, // 4
+    { player: 1.00, ghost: 1.20, frightened: 0.70 }, // 5+
+  ];
 
   var maze = [];
   var dotsLeft = 0;
@@ -182,6 +203,10 @@
   var lastFrameTime = 0;
   var ghostCombo = 0;
   var mouthFrame = 0;
+  var floatScores = [];
+  var fruit = null;
+  var fruitTimer = 0;
+  var particles = [];
 
   function setOverlayButtons(showStart, showNext) {
     btnStart.classList.toggle("hidden", !showStart);
@@ -406,18 +431,25 @@
   }
 
   function playerSpeed() {
-    return PLAYER_PIXELS_PER_SEC / 1000;
+    var lv = Math.min(LEVEL_SPEEDS.length, level) - 1;
+    return (BASE_SPEED * LEVEL_SPEEDS[lv].player * PLAYER_SPEED_MULT) / 1000;
   }
 
   function ghostSpeed(frightened) {
+    var lv = Math.min(LEVEL_SPEEDS.length, level) - 1;
     if (frightened) {
-      return FRIGHTENED_PIXELS_PER_SEC / 1000;
+      return (BASE_SPEED * LEVEL_SPEEDS[lv].frightened * FRIGHTENED_SPEED_MULT) / 1000;
     }
-    return GHOST_PIXELS_PER_SEC / 1000;
+    return (BASE_SPEED * LEVEL_SPEEDS[lv].ghost * GHOST_SPEED_MULT) / 1000;
   }
 
   function eatenGhostSpeed() {
-    return EATEN_GHOST_PIXELS_PER_SEC / 1000;
+    var lv = Math.min(LEVEL_SPEEDS.length, level) - 1;
+    return (BASE_SPEED * LEVEL_SPEEDS[lv].ghost * EATEN_SPEED_MULT) / 1000;
+  }
+
+  function cornerBoostSpeed() {
+    return playerSpeed() * CORNER_BOOST_MULT;
   }
 
   function initLevel() {
@@ -436,6 +468,15 @@
     modeElapsedMs = 0;
     frightenedMs = 0;
     ghostCombo = 0;
+    particles = [];
+    floatScores = [];
+    fruit = null;
+    fruitTimer = 0;
+    // Set initial ghost speeds for level
+    var i;
+    for (i = 0; i < ghosts.length; i++) {
+      ghosts[i].speed = ghostSpeed(false);
+    }
   }
 
   function makeGhost(c, r, dir, idx, inPen) {
@@ -546,14 +587,30 @@
     if (ghostMode === MODE_SCATTER) {
       target = SCATTER_CORNERS[g.idx];
     } else {
-      target = { c: player.c, r: player.r };
-      if (g.idx === 1) {
-        var leadDir = player.dir || player.nextDir || DIR_LEFT;
-        target = { c: player.c + DX[leadDir] * 4, r: player.r + DY[leadDir] * 4 };
-      } else if (g.idx === 2) {
+      // CHASE MODE - each ghost has unique targeting
+      var playerDir = player.dir || player.nextDir || DIR_LEFT;
+      var ahead4c = player.c + DX[playerDir] * 4;
+      var ahead4r = player.r + DY[playerDir] * 4;
+      
+      if (g.idx === 0) {
+        // BLINKY (Red/Crimson): Direct chase
         target = { c: player.c, r: player.r };
+      } else if (g.idx === 1) {
+        // PINKY (Pink/Rose): 4 tiles ahead of player's facing direction
+        target = { c: ahead4c, r: ahead4r };
+      } else if (g.idx === 2) {
+        // INKY (Cyan/Azure): 2x vector from Blinky to 2 tiles ahead of player
+        var blinky = ghosts[0];
+        var ahead2c = player.c + DX[playerDir] * 2;
+        var ahead2r = player.r + DY[playerDir] * 2;
+        target = {
+          c: ahead2c + (ahead2c - blinky.c),
+          r: ahead2r + (ahead2r - blinky.r)
+        };
       } else if (g.idx === 3) {
-        if (dist2(g.c, g.r, player.c, player.r) > 36) {
+        // CLYDE (Orange/Amber): Chase if >8 tiles away, else scatter
+        var dist2ToPlayer = dist2(g.c, g.r, player.c, player.r);
+        if (dist2ToPlayer > 64) {
           target = { c: player.c, r: player.r };
         } else {
           target = SCATTER_CORNERS[3];
@@ -696,8 +753,10 @@
   }
 
   function moveActor(actor, isPlayer, elapsedMs) {
-    var distLeft = actor.speed * elapsedMs;
+    var baseSpeed = actor.speed;
+    var distLeft = baseSpeed * elapsedMs;
     var safety = 0;
+    var wasTurning = false;
 
     while (distLeft > 0.01 && safety < 8) {
       safety++;
@@ -721,6 +780,19 @@
       }
 
       if (isAtTileCenter(actor)) {
+        // Check for cornering boost (player only)
+        if (isPlayer && actor.nextDir && actor.nextDir !== actor.dir) {
+          var turn = resolveNextTile({ c: actor.c, r: actor.r, dir: actor.nextDir });
+          if (actorCanWalk(turn.c, turn.r, true)) {
+            // Player is turning - apply corner boost
+            actor.speed = cornerBoostSpeed();
+            wasTurning = true;
+          }
+        } else if (wasTurning) {
+          // Restore normal speed after turn completes
+          actor.speed = baseSpeed;
+          wasTurning = false;
+        }
         resolveDirAtCenter(actor, isPlayer);
         if (!actor.dir) {
           return;
@@ -735,6 +807,7 @@
       if (!actorCanWalk(nc, nr, isPlayer)) {
         snapToCenter(actor);
         actor.dir = DIR_NONE;
+        if (wasTurning) actor.speed = baseSpeed;
         return;
       }
 
@@ -763,14 +836,18 @@
         distLeft = 0;
       }
     }
+    if (wasTurning) actor.speed = baseSpeed;
   }
 
   function eatAt(c, r) {
     var t = maze[r][c];
+    var px = OFF_X + c * TILE + TILE * 0.5;
+    var py = OFF_Y + r * TILE + TILE * 0.5;
     if (t === ".") {
       maze[r][c] = " ";
       score += DOT_POINTS;
       dotsLeft--;
+      spawnParticles(px, py, PELLET_COLOR, 4);
       updateHud();
     } else if (t === "o") {
       maze[r][c] = " ";
@@ -785,7 +862,49 @@
           ghosts[i].speed = ghostSpeed(true);
         }
       }
+      spawnParticles(px, py, "#fff8d0", 12);
       updateHud();
+    }
+  }
+
+  function spawnParticles(x, y, color, count) {
+    for (var i = 0; i < count; i++) {
+      var angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+      var speed = 1 + Math.random() * 2;
+      particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        color: color,
+        life: 20 + Math.random() * 20,
+        size: 2 + Math.random() * 3,
+      });
+    }
+  }
+
+  function updateParticles(elapsedMs) {
+    var i;
+    for (i = particles.length - 1; i >= 0; i--) {
+      var p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 1;
+      if (p.life <= 0) {
+        particles.splice(i, 1);
+      }
+    }
+  }
+
+  function drawParticles() {
+    var i;
+    for (i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      var alpha = p.life / 40;
+      ctx.fillStyle = p.color.replace(")", "," + alpha + ")").replace("rgb", "rgba");
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -888,8 +1007,11 @@
       if (g.inPen || g.eaten) {
         continue;
       }
-      var d = Math.abs(g.x - player.x) + Math.abs(g.y - player.y);
-      if (d > TILE * 0.55) {
+      var dx = g.x - player.x;
+      var dy = g.y - player.y;
+      var d2 = dx * dx + dy * dy;
+      var hitRadius = TILE * 0.45;
+      if (d2 > hitRadius * hitRadius) {
         continue;
       }
       if (frightenedMs > 0 && !g.eaten) {
@@ -921,22 +1043,35 @@
     }
     phase = PHASE_DIED;
     running = false;
-    overlay.classList.remove("hidden");
-    overlayTitle.textContent = "MUNCHED!";
-    instructionsEl.textContent = "Lives left: " + lives;
-    btnStart.textContent = "CONTINUE";
-    btnStart.disabled = false;
-    endHintEl.textContent = "Press CONTINUE within 30 seconds.";
-    setOverlayButtons(true, false);
-    setStartScreenExtras(false);
-    setQuitVisible(true);
-    continueDeadline = Date.now() + CONTINUE_TIMEOUT_MS;
-    clearContinueTimer();
-    continueTimerId = setTimeout(function () {
-      if (phase === PHASE_DIED) {
-        gameOver();
+    deathAnimating = true;
+    deathAnimFrame = 0;
+    // Death animation: Pac-Man shrinks and spins (handled in draw loop)
+    var deathAnim = setInterval(function () {
+      if (deathAnimFrame > 15) {
+        clearInterval(deathAnim);
+        showDeathOverlay();
       }
-    }, CONTINUE_TIMEOUT_MS);
+    }, 80);
+    
+    function showDeathOverlay() {
+      deathAnimating = false;
+      overlay.classList.remove("hidden");
+      overlayTitle.textContent = "MUNCHED!";
+      instructionsEl.textContent = "Lives left: " + lives;
+      btnStart.textContent = "CONTINUE";
+      btnStart.disabled = false;
+      endHintEl.textContent = "Press CONTINUE within 30 seconds.";
+      setOverlayButtons(true, false);
+      setStartScreenExtras(false);
+      setQuitVisible(true);
+      continueDeadline = Date.now() + CONTINUE_TIMEOUT_MS;
+      clearContinueTimer();
+      continueTimerId = setTimeout(function () {
+        if (phase === PHASE_DIED) {
+          gameOver();
+        }
+      }, CONTINUE_TIMEOUT_MS);
+    }
   }
 
   function continueAfterDeath() {
@@ -944,6 +1079,8 @@
       return;
     }
     clearContinueTimer();
+    deathAnimating = false;
+    deathAnimFrame = 0;
     player = findStart(PLAYER_START_COL, PLAYER_START_ROW, DIR_LEFT);
     var i;
     for (i = 0; i < ghosts.length; i++) {
@@ -986,8 +1123,54 @@
     moveActor(player, true, elapsedMs);
     updateModeTimer(elapsedMs);
     updateGhosts(elapsedMs);
+    updateFruit(elapsedMs);
+    updateParticles(elapsedMs);
     checkCollisions();
+    checkFruitCollision();
     checkLevelComplete();
+  }
+
+  function updateFruit(elapsedMs) {
+    // Spawn fruit at specific dot thresholds (2 per level)
+    if (!fruit && FRUIT_SPAWN_DOTS.indexOf(dotsLeft) >= 0) {
+      var fruitIdx = Math.min(FRUIT_TYPES.length - 1, level - 1);
+      fruit = {
+        c: 13,
+        r: 17, // Just below ghost pen
+        type: fruitIdx,
+        score: FRUIT_SCORES[fruitIdx],
+        timer: FRUIT_LIFETIME_MS,
+      };
+    }
+    if (fruit) {
+      fruit.timer -= elapsedMs;
+      if (fruit.timer <= 0) {
+        fruit = null;
+      }
+    }
+  }
+
+  function checkFruitCollision() {
+    if (!fruit) return;
+    var fc = fruit.c;
+    var fr = fruit.r;
+    var dx = player.x - (OFF_X + fc * TILE + TILE * 0.5);
+    var dy = player.y - (OFF_Y + fr * TILE + TILE * 0.5);
+    if (dx * dx + dy * dy < (TILE * 0.5) * (TILE * 0.5)) {
+      score += fruit.score;
+      spawnFloatScore(player.x, player.y - 16, fruit.score);
+      fruit = null;
+      updateHud();
+    }
+  }
+
+  function spawnFloatScore(x, y, pts) {
+    floatScores.push({
+      x: x,
+      y: y,
+      text: pts,
+      life: 60,
+    });
   }
 
   function update(elapsedMs) {
@@ -1021,9 +1204,9 @@
     var r;
     var c;
     var inset = WALL_LINE * 0.5;
-    ctx.strokeStyle = WALL_COLOR;
-    ctx.lineWidth = WALL_LINE;
-    ctx.lineCap = "square";
+    var wallGlow = TILE * 0.08;
+    
+    // Draw wall segments with glow effect
     for (r = 0; r < ROWS; r++) {
       for (c = 0; c < COLS; c++) {
         if (!isWallTile(maze[r][c])) {
@@ -1031,29 +1214,101 @@
         }
         var x = OFF_X + c * TILE;
         var y = OFF_Y + r * TILE;
-        if (!wallAt(c, r - 1)) {
+        
+        // Determine which edges are exposed
+        var topOpen = !wallAt(c, r - 1);
+        var botOpen = !wallAt(c, r + 1);
+        var leftOpen = !wallAt(c - 1, r);
+        var rightOpen = !wallAt(c + 1, r);
+        
+        // Draw glowing edges
+        ctx.lineWidth = WALL_LINE;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        
+        if (topOpen) {
+          // Glow
+          ctx.strokeStyle = "#4444ff";
+          ctx.lineWidth = WALL_LINE + wallGlow * 2;
+          ctx.beginPath();
+          ctx.moveTo(x - wallGlow, y + inset);
+          ctx.lineTo(x + TILE + wallGlow, y + inset);
+          ctx.stroke();
+          // Core
+          ctx.strokeStyle = WALL_COLOR;
+          ctx.lineWidth = WALL_LINE;
           ctx.beginPath();
           ctx.moveTo(x, y + inset);
           ctx.lineTo(x + TILE, y + inset);
           ctx.stroke();
         }
-        if (!wallAt(c, r + 1)) {
+        if (botOpen) {
+          ctx.strokeStyle = "#4444ff";
+          ctx.lineWidth = WALL_LINE + wallGlow * 2;
+          ctx.beginPath();
+          ctx.moveTo(x - wallGlow, y + TILE - inset);
+          ctx.lineTo(x + TILE + wallGlow, y + TILE - inset);
+          ctx.stroke();
+          ctx.strokeStyle = WALL_COLOR;
+          ctx.lineWidth = WALL_LINE;
           ctx.beginPath();
           ctx.moveTo(x, y + TILE - inset);
           ctx.lineTo(x + TILE, y + TILE - inset);
           ctx.stroke();
         }
-        if (!wallAt(c - 1, r)) {
+        if (leftOpen) {
+          ctx.strokeStyle = "#4444ff";
+          ctx.lineWidth = WALL_LINE + wallGlow * 2;
+          ctx.beginPath();
+          ctx.moveTo(x + inset, y - wallGlow);
+          ctx.lineTo(x + inset, y + TILE + wallGlow);
+          ctx.stroke();
+          ctx.strokeStyle = WALL_COLOR;
+          ctx.lineWidth = WALL_LINE;
           ctx.beginPath();
           ctx.moveTo(x + inset, y);
           ctx.lineTo(x + inset, y + TILE);
           ctx.stroke();
         }
-        if (!wallAt(c + 1, r)) {
+        if (rightOpen) {
+          ctx.strokeStyle = "#4444ff";
+          ctx.lineWidth = WALL_LINE + wallGlow * 2;
+          ctx.beginPath();
+          ctx.moveTo(x + TILE - inset, y - wallGlow);
+          ctx.lineTo(x + TILE - inset, y + TILE + wallGlow);
+          ctx.stroke();
+          ctx.strokeStyle = WALL_COLOR;
+          ctx.lineWidth = WALL_LINE;
           ctx.beginPath();
           ctx.moveTo(x + TILE - inset, y);
           ctx.lineTo(x + TILE - inset, y + TILE);
           ctx.stroke();
+        }
+        
+        // Draw corner highlights for 3D effect
+        if (topOpen && leftOpen) {
+          ctx.fillStyle = "#6666ff";
+          ctx.beginPath();
+          ctx.arc(x + inset, y + inset, WALL_LINE * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (topOpen && rightOpen) {
+          ctx.fillStyle = "#6666ff";
+          ctx.beginPath();
+          ctx.arc(x + TILE - inset, y + inset, WALL_LINE * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (botOpen && leftOpen) {
+          ctx.fillStyle = "#6666ff";
+          ctx.beginPath();
+          ctx.arc(x + inset, y + TILE - inset, WALL_LINE * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (botOpen && rightOpen) {
+          ctx.fillStyle = "#6666ff";
+          ctx.beginPath();
+          ctx.arc(x + TILE - inset, y + TILE - inset, WALL_LINE * 0.7, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
     }
@@ -1082,30 +1337,29 @@
   function drawPellets() {
     var r;
     var c;
+    var pulse = 0.5 + 0.5 * Math.sin(frame * 0.15);
     for (r = 0; r < ROWS; r++) {
       for (c = 0; c < COLS; c++) {
         var t = maze[r][c];
-        var x = OFF_X + c * TILE;
-        var y = OFF_Y + r * TILE;
+        var x = OFF_X + c * TILE + TILE * 0.5;
+        var y = OFF_Y + r * TILE + TILE * 0.5;
         if (t === ".") {
           var dot = Math.max(2, Math.round(TILE * 0.12));
-          ctx.fillStyle = PELLET_COLOR;
-          ctx.fillRect(
-            x + Math.floor(TILE * 0.5) - Math.floor(dot * 0.5),
-            y + Math.floor(TILE * 0.5) - Math.floor(dot * 0.5),
-            dot,
-            dot
-          );
-        } else if (t === "o") {
+          var d = dot * pulse;
           ctx.fillStyle = PELLET_COLOR;
           ctx.beginPath();
-          ctx.arc(
-            x + TILE * 0.5,
-            y + TILE * 0.5,
-            Math.max(3, TILE * 0.18),
-            0,
-            Math.PI * 2
-          );
+          ctx.arc(x, y, d * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (t === "o") {
+          var rad = Math.max(3, TILE * 0.18) * (0.8 + 0.2 * pulse);
+          ctx.fillStyle = PELLET_COLOR;
+          ctx.beginPath();
+          ctx.arc(x, y, rad, 0, Math.PI * 2);
+          ctx.fill();
+          // Inner glow
+          ctx.fillStyle = "#fff8d0";
+          ctx.beginPath();
+          ctx.arc(x, y, rad * 0.4, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -1168,8 +1422,8 @@
       if (frightenedMs > 0 && !g.eaten) {
         ctx.fillStyle = frightenedMs < 1500 && Math.floor(frame / 8) % 2 ? "#fff" : "#28f";
       } else if (g.eaten) {
-        ctx.fillStyle = "#ccc";
-        radius = TILE * 0.28;
+        ctx.fillStyle = "#333";
+        radius = TILE * 0.22;
       } else {
         ctx.fillStyle = GHOST_COLORS[g.idx];
       }
@@ -1184,14 +1438,35 @@
       ctx.lineTo(g.x - radius, feet);
       ctx.closePath();
       ctx.fill();
-      if (!g.eaten && !(frightenedMs > 0)) {
-        var eye = Math.max(2, Math.floor(TILE * 0.14));
+      
+      // Eyes
+      var eye = Math.max(2, Math.floor(TILE * 0.14));
+      var pupilOffset = 0;
+      if (g.eaten) {
+        // Eyes look toward pen center when returning
         ctx.fillStyle = "#fff";
         ctx.fillRect(g.x - eye * 1.5, g.y - eye, eye, eye + 1);
         ctx.fillRect(g.x + eye * 0.5, g.y - eye, eye, eye + 1);
         ctx.fillStyle = "#00f";
-        ctx.fillRect(g.x - eye * 1.3, g.y - eye * 0.7, eye * 0.5, eye * 0.7);
-        ctx.fillRect(g.x + eye * 0.7, g.y - eye * 0.7, eye * 0.5, eye * 0.7);
+        var px = 0, py = 0;
+        if (g.dir === DIR_UP) py = -eye * 0.3;
+        else if (g.dir === DIR_DOWN) py = eye * 0.3;
+        else if (g.dir === DIR_LEFT) px = -eye * 0.3;
+        else if (g.dir === DIR_RIGHT) px = eye * 0.3;
+        ctx.fillRect(g.x - eye * 1.3 + px, g.y - eye * 0.7 + py, eye * 0.5, eye * 0.7);
+        ctx.fillRect(g.x + eye * 0.7 + px, g.y - eye * 0.7 + py, eye * 0.5, eye * 0.7);
+      } else if (!(frightenedMs > 0)) {
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(g.x - eye * 1.5, g.y - eye, eye, eye + 1);
+        ctx.fillRect(g.x + eye * 0.5, g.y - eye, eye, eye + 1);
+        ctx.fillStyle = "#00f";
+        var px = 0, py = 0;
+        if (g.dir === DIR_UP) py = -eye * 0.3;
+        else if (g.dir === DIR_DOWN) py = eye * 0.3;
+        else if (g.dir === DIR_LEFT) px = -eye * 0.3;
+        else if (g.dir === DIR_RIGHT) px = eye * 0.3;
+        ctx.fillRect(g.x - eye * 1.3 + px, g.y - eye * 0.7 + py, eye * 0.5, eye * 0.7);
+        ctx.fillRect(g.x + eye * 0.7 + px, g.y - eye * 0.7 + py, eye * 0.5, eye * 0.7);
       }
     }
   }
@@ -1200,11 +1475,24 @@
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, W, H);
     if (maze.length) {
-      drawMaze();
+      if (levelFlashing && levelFlashCount % 2 === 0) {
+        // Flash white
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(OFF_X, OFF_Y, MAZE_W, MAZE_H);
+      } else {
+        drawMaze();
+      }
     }
     if (phase !== PHASE_MENU && phase !== PHASE_OVER && player) {
+      drawFruit();
+      drawFloatScores();
+      drawParticles();
       drawGhosts();
-      drawPlayer();
+      if (deathAnimating) {
+        drawDeathAnimation();
+      } else {
+        drawPlayer();
+      }
     }
     if (phase === PHASE_READY && readyMs > 0) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
@@ -1213,6 +1501,58 @@
       ctx.font = "bold " + Math.max(12, Math.round(TILE * 0.9)) + "px monospace";
       ctx.textAlign = "center";
       ctx.fillText("READY!", OFF_X + MAZE_W * 0.5, OFF_Y + TILE * (PEN_ROW_MID + 0.5));
+      ctx.textAlign = "left";
+    }
+  }
+
+  function drawDeathAnimation() {
+    if (!player) return;
+    var radius = TILE * 0.38;
+    var progress = deathAnimFrame / 15;
+    var shrink = 1 - progress * 0.8;
+    var spin = progress * Math.PI * 4;
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(spin);
+    ctx.fillStyle = "#ffe066";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    var mouth = 0.25 + progress * 1.5;
+    ctx.arc(0, 0, radius * shrink, mouth * Math.PI, (2 - mouth) * Math.PI);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    deathAnimFrame++;
+  }
+
+  function drawFruit() {
+    if (!fruit) return;
+    var x = OFF_X + fruit.c * TILE + TILE * 0.5;
+    var y = OFF_Y + fruit.r * TILE + TILE * 0.5;
+    var size = TILE * 0.7;
+    ctx.font = size + "px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(FRUIT_TYPES[fruit.type], x, y);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
+  function drawFloatScores() {
+    var i;
+    for (i = floatScores.length - 1; i >= 0; i--) {
+      var fs = floatScores[i];
+      fs.y -= 0.5;
+      fs.life -= 1;
+      if (fs.life <= 0) {
+        floatScores.splice(i, 1);
+        continue;
+      }
+      var alpha = fs.life / 60;
+      ctx.fillStyle = "rgba(255, 224, 102," + alpha + ")";
+      ctx.font = "bold " + Math.max(10, Math.round(TILE * 0.6)) + "px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(fs.text, fs.x, fs.y);
       ctx.textAlign = "left";
     }
   }
@@ -1268,14 +1608,29 @@
 
   function showLevelComplete() {
     phase = PHASE_LEVEL;
-    overlay.classList.remove("hidden");
-    overlayTitle.textContent = "LEVEL " + level + " CLEARED!";
-    instructionsEl.textContent = "Score: " + score + " — ghosts speed up next maze.";
-    endHintEl.textContent = "";
-    btnNext.textContent = "NEXT LEVEL";
-    setOverlayButtons(false, true);
-    setStartScreenExtras(false);
-    setQuitVisible(true);
+    running = false;
+    levelFlashing = true;
+    levelFlashCount = 0;
+    // Flash maze animation
+    var flashAnim = setInterval(function () {
+      levelFlashCount++;
+      if (levelFlashCount > 6) {
+        clearInterval(flashAnim);
+        levelFlashing = false;
+        showLevelOverlay();
+      }
+    }, 150);
+    
+    function showLevelOverlay() {
+      overlay.classList.remove("hidden");
+      overlayTitle.textContent = "LEVEL " + level + " CLEARED!";
+      instructionsEl.textContent = "Score: " + score + " — ghosts speed up next maze.";
+      endHintEl.textContent = "";
+      btnNext.textContent = "NEXT LEVEL";
+      setOverlayButtons(false, true);
+      setStartScreenExtras(false);
+      setQuitVisible(true);
+    }
   }
 
   function formatTopScore(scoreVal, enabled) {
