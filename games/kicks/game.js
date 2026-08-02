@@ -332,23 +332,46 @@
     return x >= 0 && y >= 0 && x < COLS && y < ROWS;
   }
 
-  function isWalkable(x, y) {
-    if (!inBounds(x, y)) {
-      return false;
-    }
-    return field[idx(x, y)] === CLAIMED;
+  function isClaimed(x, y) {
+    return inBounds(x, y) && field[idx(x, y)] === CLAIMED;
   }
 
   function isOpen(x, y) {
     return inBounds(x, y) && field[idx(x, y)] === EMPTY;
   }
 
+  function neighborIsDraw(x, y) {
+    return inBounds(x, y) && field[idx(x, y)] === DRAWING;
+  }
+
+  // Classic Qix: walk only edges — outer frame + shoreline next to open/stix.
+  // Filled image interior is NOT a path (prevents "overrun under the image").
+  function isWalkable(x, y) {
+    if (!isClaimed(x, y)) {
+      return false;
+    }
+    if (x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1) {
+      return true;
+    }
+    return (
+      isOpen(x + 1, y) ||
+      isOpen(x - 1, y) ||
+      isOpen(x, y + 1) ||
+      isOpen(x, y - 1) ||
+      neighborIsDraw(x + 1, y) ||
+      neighborIsDraw(x - 1, y) ||
+      neighborIsDraw(x, y + 1) ||
+      neighborIsDraw(x, y - 1)
+    );
+  }
+
   function nearestWalkable(fromX, fromY) {
     if (isWalkable(fromX, fromY)) {
       return { x: fromX, y: fromY };
     }
-    var best = { x: Math.floor(COLS / 2), y: 0 };
+    var best = null;
     var bestD = 1e9;
+    var bestPri = 99;
     var x;
     var y;
     for (y = 0; y < ROWS; y++) {
@@ -356,14 +379,54 @@
         if (!isWalkable(x, y)) {
           continue;
         }
+        var touchesOpen =
+          isOpen(x + 1, y) ||
+          isOpen(x - 1, y) ||
+          isOpen(x, y + 1) ||
+          isOpen(x, y - 1);
+        var pri = touchesOpen ? 0 : 1;
         var d = Math.abs(x - fromX) + Math.abs(y - fromY);
-        if (d < bestD) {
+        if (pri < bestPri || (pri === bestPri && d < bestD)) {
+          bestPri = pri;
           bestD = d;
           best = { x: x, y: y };
         }
       }
     }
+    if (!best) {
+      return { x: Math.floor(COLS / 2), y: 0 };
+    }
     return best;
+  }
+
+  function pickRespawnCell() {
+    // Prefer a wall that still borders open territory (the "live" edge).
+    var shore = [];
+    var outer = [];
+    var x;
+    var y;
+    for (y = 0; y < ROWS; y++) {
+      for (x = 0; x < COLS; x++) {
+        if (!isWalkable(x, y)) {
+          continue;
+        }
+        if (
+          isOpen(x + 1, y) ||
+          isOpen(x - 1, y) ||
+          isOpen(x, y + 1) ||
+          isOpen(x, y - 1)
+        ) {
+          shore.push({ x: x, y: y });
+        } else {
+          outer.push({ x: x, y: y });
+        }
+      }
+    }
+    var pool = shore.length ? shore : outer;
+    if (!pool.length) {
+      return { x: Math.floor(COLS / 2), y: 0 };
+    }
+    return pool[(Math.random() * pool.length) | 0];
   }
 
   function sanitizePlayer() {
@@ -721,11 +784,18 @@
         return;
       }
     }
-    // Cannot cross own stix (spiral death → fuse)
+    // Rejoining your own line closes the loop (the "wall" you just drew)
     var i;
     for (i = 0; i < stix.length; i++) {
       if (stix[i].x === nx && stix[i].y === ny) {
-        fuseOn = true;
+        if (stix.length > 2) {
+          px = nx;
+          py = ny;
+          completeClaim();
+          moveCool = 3;
+          fuseIdle = 0;
+          sanitizePlayer();
+        }
         return;
       }
     }
@@ -752,6 +822,7 @@
       return;
     }
 
+    // Hit any claimed edge wall → close & claim (cannot enter filled interior)
     if (isWalkable(nx, ny) && drawing && stix.length > 1) {
       stix.push({ x: nx, y: ny });
       px = nx;
@@ -763,7 +834,7 @@
       return;
     }
 
-    // Blocked — do not leave the path / hide off a valid cell
+    // Blocked (including filled interior under the image)
     sanitizePlayer();
   }
 
@@ -896,6 +967,12 @@
     fuseOn = false;
     fuseIdle = 0;
     fillPct = calcFillPct();
+    // Stay on a real edge after the fill, not inside the image
+    if (!isWalkable(px, py)) {
+      var edge = pickRespawnCell();
+      px = edge.x;
+      py = edge.y;
+    }
     updateHud();
 
     // Dual Qix split?
@@ -985,10 +1062,12 @@
       gameOver();
       return;
     }
-    px = Math.floor(COLS / 2);
-    py = 0;
+    // Respawn on a remaining wall that still borders open space
+    var spawn = pickRespawnCell();
+    px = spawn.x;
+    py = spawn.y;
     invuln = 180;
-    banner = "Walk the border, then cut into the dark";
+    banner = "Back on the wall — cut into the dark when ready";
     bannerT = 120;
   }
 
