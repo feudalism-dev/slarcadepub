@@ -136,7 +136,7 @@
   }
 
   function parseImgConfig() {
-    imgCfg.provider = (queryParam("img_provider", "loremflickr") || "loremflickr").toLowerCase();
+    imgCfg.provider = (queryParam("img_provider", "picsum") || "picsum").toLowerCase();
     imgCfg.category = queryParam("img_category", "space,cyberpunk") || "space,cyberpunk";
     imgCfg.maturity = (queryParam("img_maturity", "general") || "general").toLowerCase();
     imgCfg.custom = queryParam("img_custom", "") || "";
@@ -234,33 +234,47 @@
     if (imgCfg.provider === "custom" && imgCfg.custom) {
       return imgCfg.custom;
     }
-    // Category + random remote image each seed (default)
+    var seed = String(imgCfg.seed || "1");
+    var salt = categoryTagPath().replace(/,/g, "-") || "arcade";
+
+    // picsum (recommended): seed path is reliably unique per level
+    if (imgCfg.provider === "picsum") {
+      return (
+        "https://picsum.photos/seed/" +
+        encodeURIComponent("kicks-" + salt + "-" + seed) +
+        "/600/600"
+      );
+    }
+
+    // loremflickr: multi-tag+lock often returns the SAME photo (verified).
+    // Use a single tag from CATEGORY + lock, which varies reliably.
     if (
       imgCfg.provider === "loremflickr" ||
       imgCfg.provider === "flickr" ||
       imgCfg.provider === "random"
     ) {
-      var tags = categoryTagPath();
+      var tags = categoryTagPath().split(",").filter(Boolean);
+      if (!tags.length) {
+        tags = ["nature"];
+      }
+      var tagPick = tags[Math.abs(parseInt(seed, 10) || 0) % tags.length];
       return (
         "https://loremflickr.com/600/600/" +
-        tags +
+        tagPick +
         "?lock=" +
-        encodeURIComponent(imgCfg.seed)
+        encodeURIComponent(seed)
       );
     }
-    if (imgCfg.provider === "picsum") {
-      return "https://picsum.photos/seed/kicks" + imgCfg.seed + "/600/600";
-    }
+
     if (imgCfg.provider === "catalog") {
       return null;
     }
-    // Unknown provider → treat as loremflickr
-    var fallbackTags = categoryTagPath();
+
+    // Default / unknown → picsum (unique per seed)
     return (
-      "https://loremflickr.com/600/600/" +
-      fallbackTags +
-      "?lock=" +
-      encodeURIComponent(imgCfg.seed)
+      "https://picsum.photos/seed/" +
+      encodeURIComponent("kicks-" + salt + "-" + seed) +
+      "/600/600"
     );
   }
 
