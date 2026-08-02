@@ -278,15 +278,22 @@
 
   function getLeaderboard() {
     if (!apiBase) {
-      if (scoresForThisGame()) {
-        return Promise.resolve(leaderboardFromUrlSeed());
-      }
+      // Do not fake a healthy leaderboard — missing HTTP-IN means scores cannot load/save.
       return Promise.resolve({
         ok: true,
         game: resolveGameId(),
         scoresEnabled: false,
-        personalScore: 0,
-        entries: [],
+        personalScore: urlSeedPersonal > 0 ? urlSeedPersonal : 0,
+        entries: urlSeedHigh > 0
+          ? [
+              {
+                rank: 1,
+                score: urlSeedHigh,
+                name: "—",
+                avatar: "",
+              },
+            ]
+          : [],
         unavailableMessage: SCORES_UNAVAILABLE_MSG,
       });
     }
@@ -316,18 +323,9 @@
   function submitScore(score) {
     if (!apiBase) {
       // No HTTP-in: stay on the current page (never location.replace / MOAP reload).
-      if (scoresForThisGame()) {
-        return Promise.resolve({
-          ok: true,
-          game: resolveGameId(),
-          saved: false,
-          scoresEnabled: true,
-          messages: [],
-          unavailableMessage: "",
-        });
-      }
       return Promise.resolve({
         ok: true,
+        game: resolveGameId(),
         saved: false,
         scoresEnabled: false,
         messages: [],
