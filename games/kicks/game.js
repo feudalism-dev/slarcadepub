@@ -103,6 +103,7 @@
   };
   var catalogCache = null;
   var loopAlive = false;
+  var revealLoadGen = 0;
 
   function queryParam(name, fallback) {
     try {
@@ -162,10 +163,22 @@
 
   function freshImageSeed() {
     return String(
-      Math.floor(Math.random() * 900000) +
-        1000 +
-        (level || 1) * 7919 +
-        (Date.now() % 100000)
+      Date.now() +
+        Math.floor(Math.random() * 1000000) +
+        (level || 1) * 10007
+    );
+  }
+
+  function withCacheBust(url) {
+    if (!url) {
+      return url;
+    }
+    var sep = url.indexOf("?") >= 0 ? "&" : "?";
+    return (
+      url +
+      sep +
+      "_kicks=" +
+      encodeURIComponent(String(imgCfg.seed) + "_" + String(Date.now()))
     );
   }
 
@@ -261,9 +274,17 @@
     revealReady = false;
     revealImg = null;
     setRevealFront(false);
+    revealLoadGen++;
+    var loadGen = revealLoadGen;
     if (revealPanel) {
       revealPanel.classList.remove("ready");
+      // Drop prior decoded bitmap so CEF cannot keep showing the last level
+      revealPanel.onload = null;
+      revealPanel.onerror = null;
       revealPanel.removeAttribute("src");
+      try {
+        revealPanel.src = "";
+      } catch (eClr) {}
     }
     var direct = resolveImageUrl();
     function useUrl(url) {
@@ -271,8 +292,15 @@
         revealReady = false;
         return;
       }
-      // DOM <img> display does not need canvas CORS — just cache in the panel.
+      if (loadGen !== revealLoadGen) {
+        return;
+      }
+      // Force a new network fetch each level (SL CEF caches aggressively)
+      var finalUrl = withCacheBust(url);
       revealPanel.onload = function () {
+        if (loadGen !== revealLoadGen) {
+          return;
+        }
         if (revealPanel.naturalWidth > 0 && revealPanel.naturalHeight > 0) {
           revealReady = true;
           revealImg = revealPanel;
@@ -283,11 +311,14 @@
         }
       };
       revealPanel.onerror = function () {
+        if (loadGen !== revealLoadGen) {
+          return;
+        }
         revealReady = false;
         revealImg = null;
         revealPanel.classList.remove("ready");
       };
-      revealPanel.src = url;
+      revealPanel.src = finalUrl;
     }
     if (direct) {
       useUrl(direct);

@@ -50,8 +50,8 @@
   background: transparent;
 }
 
-/* Full image in front of canvas until NEXT LEVEL */
-#game-wrap.reveal-front #reveal-panel {
+/* Full image in front of canvas until NEXT LEVEL (only if loaded) */
+#game-wrap.reveal-front #reveal-panel.ready {
   z-index: 3;
   opacity: 1;
 }
