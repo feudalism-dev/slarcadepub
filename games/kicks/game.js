@@ -906,22 +906,21 @@
       }
     }
 
+    // Map open cells → region index (avoids O(regions×cells) scans that hitch on big fills)
+    var cellRegion = {};
+    for (i = 0; i < regions.length; i++) {
+      var cellsR = regions[i];
+      var j;
+      for (j = 0; j < cellsR.length; j++) {
+        cellRegion[cellsR[j].x + "," + cellsR[j].y] = i;
+      }
+    }
     var qixRegions = {};
     for (i = 0; i < qixes.length; i++) {
       var qc = qixCell(qixes[i]);
-      var r;
-      for (r = 0; r < regions.length; r++) {
-        var hit = false;
-        var j;
-        for (j = 0; j < regions[r].length; j++) {
-          if (regions[r][j].x === qc.x && regions[r][j].y === qc.y) {
-            hit = true;
-            break;
-          }
-        }
-        if (hit) {
-          qixRegions[r] = true;
-        }
+      var rq = cellRegion[qc.x + "," + qc.y];
+      if (rq !== undefined) {
+        qixRegions[rq] = true;
       }
     }
 
@@ -989,6 +988,9 @@
         }
         banner = "QIX SPLIT — MULTIPLIER ×" + scoreMult;
         bannerT = 120;
+        // Switch phase first so the next paint uses the cheap full-image path
+        phase = PHASE_LEVEL;
+        running = false;
         showLevelClear(0, true);
         return;
       }
@@ -1007,6 +1009,8 @@
         highScore = score;
       }
       checkLifeBonus();
+      phase = PHASE_LEVEL;
+      running = false;
       showLevelClear(over, false);
     }
   }
@@ -1319,7 +1323,8 @@
     ctx.fillStyle = "#0a1020";
     ctx.fillRect(0, 0, WORLD, WORLD);
 
-    // Reveal image under claimed cells (full image on level-clear)
+    // Reveal: draw full image, then fog only OPEN cells.
+    // (Per-cell clip paths with thousands of rects freeze CEF/SL when nearly full.)
     var x;
     var y;
     var drewReveal = false;
@@ -1331,26 +1336,19 @@
       revealImg.naturalHeight > 0
     ) {
       try {
-        if (showFullArt) {
-          ctx.drawImage(revealImg, 0, 0, WORLD, WORLD);
-          drewReveal = true;
-        } else {
-          ctx.save();
-          ctx.beginPath();
+        ctx.drawImage(revealImg, 0, 0, WORLD, WORLD);
+        if (!showFullArt) {
+          // Fog unclaimed only (cheap when mostly filled — the freeze case)
+          ctx.fillStyle = "#0a1020";
           for (y = 0; y < ROWS; y++) {
             for (x = 0; x < COLS; x++) {
-              if (field[idx(x, y)] === CLAIMED) {
-                ctx.rect(x * CELL, y * CELL, CELL + 0.5, CELL + 0.5);
+              if (field[idx(x, y)] !== CLAIMED) {
+                ctx.fillRect(x * CELL, y * CELL, CELL + 0.5, CELL + 0.5);
               }
             }
           }
-          ctx.clip();
-          ctx.drawImage(revealImg, 0, 0, WORLD, WORLD);
-          ctx.fillStyle = "rgba(61, 240, 255, 0.06)";
-          ctx.fillRect(0, 0, WORLD, WORLD);
-          ctx.restore();
-          drewReveal = true;
         }
+        drewReveal = true;
       } catch (drawErr) {
         drewReveal = false;
       }
@@ -1371,7 +1369,7 @@
       return;
     }
 
-    // Bright edge on claim/open boundary so the walkable path stays visible
+    // Bright edge only on shoreline (claimed next to open) — skip solid interiors
     ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
     ctx.lineWidth = 1.25;
     for (y = 0; y < ROWS; y++) {
@@ -1379,7 +1377,12 @@
         if (field[idx(x, y)] !== CLAIMED) {
           continue;
         }
-        if (isOpen(x + 1, y) || isOpen(x - 1, y) || isOpen(x, y + 1) || isOpen(x, y - 1)) {
+        if (
+          isOpen(x + 1, y) ||
+          isOpen(x - 1, y) ||
+          isOpen(x, y + 1) ||
+          isOpen(x, y - 1)
+        ) {
           ctx.strokeRect(x * CELL + 0.5, y * CELL + 0.5, CELL - 1, CELL - 1);
         }
       }
