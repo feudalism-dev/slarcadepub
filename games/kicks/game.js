@@ -270,6 +270,30 @@
     }
   }
 
+  function syncRevealPanelFrom(img) {
+    // Replace the <img> node each level so CEF cannot keep the previous bitmap.
+    if (!gameWrap || !img) {
+      return;
+    }
+    var neu = document.createElement("img");
+    neu.id = "reveal-panel";
+    neu.alt = "";
+    neu.draggable = false;
+    neu.className = "ready";
+    var old = document.getElementById("reveal-panel");
+    if (old && old.parentNode) {
+      old.onload = null;
+      old.onerror = null;
+      old.parentNode.replaceChild(neu, old);
+    } else {
+      gameWrap.insertBefore(neu, canvas);
+    }
+    revealPanel = neu;
+    try {
+      neu.src = img.currentSrc || img.src;
+    } catch (eSync) {}
+  }
+
   function loadRevealImage() {
     revealReady = false;
     revealImg = null;
@@ -278,47 +302,55 @@
     var loadGen = revealLoadGen;
     if (revealPanel) {
       revealPanel.classList.remove("ready");
-      // Drop prior decoded bitmap so CEF cannot keep showing the last level
-      revealPanel.onload = null;
-      revealPanel.onerror = null;
-      revealPanel.removeAttribute("src");
-      try {
-        revealPanel.src = "";
-      } catch (eClr) {}
     }
     var direct = resolveImageUrl();
     function useUrl(url) {
-      if (!url || !revealPanel) {
+      if (!url) {
         revealReady = false;
         return;
       }
       if (loadGen !== revealLoadGen) {
         return;
       }
-      // Force a new network fetch each level (SL CEF caches aggressively)
+      // New Image() each level (same path that used to vary art before the panel stuck)
       var finalUrl = withCacheBust(url);
-      revealPanel.onload = function () {
-        if (loadGen !== revealLoadGen) {
-          return;
+      var img = new Image();
+      var triedNoCors = false;
+      function bind(withCors) {
+        if (withCors) {
+          try {
+            img.crossOrigin = "anonymous";
+          } catch (eCors) {}
         }
-        if (revealPanel.naturalWidth > 0 && revealPanel.naturalHeight > 0) {
-          revealReady = true;
-          revealImg = revealPanel;
-          revealPanel.classList.add("ready");
-        } else {
+        img.onload = function () {
+          if (loadGen !== revealLoadGen) {
+            return;
+          }
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            revealImg = img;
+            revealReady = true;
+            syncRevealPanelFrom(img);
+          } else {
+            revealReady = false;
+          }
+        };
+        img.onerror = function () {
+          if (loadGen !== revealLoadGen) {
+            return;
+          }
+          if (withCors && !triedNoCors) {
+            triedNoCors = true;
+            img = new Image();
+            bind(false);
+            img.src = finalUrl;
+            return;
+          }
           revealReady = false;
-          revealPanel.classList.remove("ready");
-        }
-      };
-      revealPanel.onerror = function () {
-        if (loadGen !== revealLoadGen) {
-          return;
-        }
-        revealReady = false;
-        revealImg = null;
-        revealPanel.classList.remove("ready");
-      };
-      revealPanel.src = finalUrl;
+          revealImg = null;
+        };
+      }
+      bind(true);
+      img.src = finalUrl;
     }
     if (direct) {
       useUrl(direct);
@@ -736,7 +768,6 @@
   }
 
   function showLevelClear(overPct, splitBonus, shownFill) {
-    // Cheap path: stop sim + raise cached DOM image. No field rewrite / no canvas art.
     phase = PHASE_LEVEL;
     running = false;
     drawing = false;
@@ -744,6 +775,7 @@
     fuseOn = false;
     sparx = [];
     setTouchPadVisible(false);
+    // Keep canvas visible — it paints this level's Image() full-bleed (panel is backup only)
     setRevealFront(true);
     if (shownFill === undefined || shownFill === null) {
       shownFill = fillPct;
@@ -1349,34 +1381,60 @@
     var x;
     var y;
 
-    // Level-clear: DOM panel is in front — skip canvas work
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#04060e";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Level-clear: one full drawImage (no clip paths) + DOM panel backup
     if (phase === PHASE_LEVEL) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (
+        revealReady &&
+        revealImg &&
+        revealImg.naturalWidth > 0 &&
+        revealImg.naturalHeight > 0
+      ) {
+        try {
+          ctx.drawImage(revealImg, ox, oy, worldW, worldH);
+        } catch (eFull) {}
+      }
       return;
     }
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    // Letterbox bars opaque; playfield hole transparent so #reveal-panel shows through
-    ctx.fillStyle = "#04060e";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.clearRect(ox, oy, worldW, worldH);
     ctx.translate(ox, oy);
     ctx.scale(scale, scale);
 
-    if (revealReady) {
-      // Image is the DOM panel behind the canvas — fog only unclaimed cells
-      ctx.fillStyle = "#0a1020";
-      for (y = 0; y < ROWS; y++) {
-        for (x = 0; x < COLS; x++) {
-          if (field[idx(x, y)] !== CLAIMED) {
-            ctx.fillRect(x * CELL, y * CELL, CELL + 0.5, CELL + 0.5);
+    // Fog base, then paint this level's Image through claimed cells only (no huge clip path)
+    ctx.fillStyle = "#0a1020";
+    ctx.fillRect(0, 0, WORLD, WORLD);
+
+    if (
+      revealReady &&
+      revealImg &&
+      revealImg.naturalWidth > 0 &&
+      revealImg.naturalHeight > 0
+    ) {
+      try {
+        // Draw full art once, then cover unclaimed with fog (cheap + unique per Image())
+        ctx.drawImage(revealImg, 0, 0, WORLD, WORLD);
+        ctx.fillStyle = "#0a1020";
+        for (y = 0; y < ROWS; y++) {
+          for (x = 0; x < COLS; x++) {
+            if (field[idx(x, y)] !== CLAIMED) {
+              ctx.fillRect(x * CELL, y * CELL, CELL + 0.5, CELL + 0.5);
+            }
+          }
+        }
+      } catch (eDraw) {
+        ctx.fillStyle = "#152238";
+        for (y = 0; y < ROWS; y++) {
+          for (x = 0; x < COLS; x++) {
+            if (field[idx(x, y)] === CLAIMED) {
+              ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+            }
           }
         }
       }
     } else {
-      ctx.fillStyle = "#0a1020";
-      ctx.fillRect(0, 0, WORLD, WORLD);
       ctx.fillStyle = "#152238";
       for (y = 0; y < ROWS; y++) {
         for (x = 0; x < COLS; x++) {

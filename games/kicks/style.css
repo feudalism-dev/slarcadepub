@@ -50,14 +50,15 @@
   background: transparent;
 }
 
-/* Full image in front of canvas until NEXT LEVEL (only if loaded) */
+/* Panel is a backup; canvas paints the live Image(). Keep panel under canvas. */
 #game-wrap.reveal-front #reveal-panel.ready {
-  z-index: 3;
+  z-index: 0;
   opacity: 1;
 }
 
 #game-wrap.reveal-front #game {
-  visibility: hidden;
+  visibility: visible;
+  z-index: 1;
 }
 
 #hud {
