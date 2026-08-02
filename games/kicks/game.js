@@ -326,7 +326,6 @@
       return imgCfg.custom;
     }
     var seed = String(imgCfg.seed || "1");
-    var salt = categoryTagPath().replace(/,/g, "-") || "arcade";
 
     // picsum: pick from scenic ID packs (CATEGORY picks a vibe). No file hosting.
     if (imgCfg.provider === "picsum") {
