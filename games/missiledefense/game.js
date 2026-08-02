@@ -1390,51 +1390,23 @@
       endHintEl.textContent = hint || "Tap PLAY AGAIN for another run.";
     }
 
-    function finishCabinetGameOver() {
-      clearTimeout(recoveryTimer);
-      if (canEndCabinet) {
-        btnStart.textContent = "SESSION ENDING…";
-        btnStart.disabled = true;
-        endHintEl.textContent =
-          "Click the arcade cabinet in-world to play again.";
-        setTimeout(function () {
-          SLArcade.endSession().catch(function () {
-            enablePlayAgain("Session could not end — tap PLAY AGAIN.");
-          });
-        }, 2000);
-        return;
-      }
-      enablePlayAgain("Tap PLAY AGAIN for another run.");
-    }
-
     SLArcade.submitScore(score)
       .then(function (result) {
-        if (result && result.pendingMoapReport) {
-          return;
-        }
-        showMessages(result.messages || []);
-        if (result.unavailableMessage) {
+        showMessages((result && result.messages) || []);
+        if (result && result.unavailableMessage) {
           unavailableEl.textContent = result.unavailableMessage;
           unavailableEl.classList.remove("hidden");
         }
         return refreshLeaderboard();
       })
       .then(function () {
-        if (hudMode) {
-          returnToStartScreen();
-        } else {
-          finishCabinetGameOver();
-        }
+        // Stay on MOAP — return to START (never endSession / clear media).
+        returnToStartScreen();
       })
       .catch(function () {
         unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
         unavailableEl.classList.remove("hidden");
-        if (hudMode) {
-          returnToStartScreen("Score save timed out — tap START to play again.");
-        } else {
-          clearTimeout(recoveryTimer);
-          enablePlayAgain("Score save timed out — you can still play again.");
-        }
+        returnToStartScreen("Score save timed out — tap START to play again.");
       });
   }
 
@@ -1502,10 +1474,6 @@
     setPlayingPointer(false);
     showMessages([]);
     showMenuOverlay();
-    // Cabinet: free the prim for the next player. HUD: keep session so wearer can replay.
-    if (!SLArcade.isHudMode()) {
-      SLArcade.endSession().catch(function () {});
-    }
   }
 
   function canvasCoords(ev) {

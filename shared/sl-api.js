@@ -247,33 +247,16 @@
   }
 
   function submitScoreViaMoapUrl(score) {
-    // Navigating the MOAP URL flashes the default prim texture and kicks the player
-    // out of the game page. Prefer HTTP-in JSONP; never use this on HUD.
-    if (hudMode) {
-      return Promise.resolve({
-        ok: true,
-        pendingMoapReport: false,
-        game: resolveGameId(),
-        saved: false,
-        scoresEnabled: scoresForThisGame(),
-        messages: [],
-        unavailableMessage: "",
-      });
-    }
-    var href = global.location.href;
-    var q = href.indexOf("?");
-    var base = q >= 0 ? href.substring(0, q) : href;
-    var params = new URLSearchParams(q >= 0 ? href.substring(q + 1) : "");
-    params.delete("sl_submit");
-    params.set("sl_submit", String(score));
-    params.set("sl_token", session.token);
-    global.location.replace(base + "?" + params.toString());
+    // Never navigate/reload the MOAP URL — that clears or flashes the prim media
+    // and boots the player off the in-page START screen. Scores save via HTTP-in
+    // JSONP when a capability is available; otherwise stay in-page unsaved.
+    void score;
     return Promise.resolve({
       ok: true,
-      pendingMoapReport: true,
+      pendingMoapReport: false,
       game: resolveGameId(),
       saved: false,
-      scoresEnabled: true,
+      scoresEnabled: scoresForThisGame(),
       messages: [],
       unavailableMessage: "",
     });
@@ -332,20 +315,7 @@
 
   function submitScore(score) {
     if (!apiBase) {
-      // HUD must never location.replace — that reloads MOAP and shows the LSL default texture.
-      if (hudMode) {
-        return Promise.resolve({
-          ok: true,
-          game: resolveGameId(),
-          saved: false,
-          scoresEnabled: scoresForThisGame(),
-          messages: [],
-          unavailableMessage: "",
-        });
-      }
-      if (scoresForThisGame() && session.token) {
-        return submitScoreViaMoapUrl(score);
-      }
+      // No HTTP-in: stay on the current page (never location.replace / MOAP reload).
       if (scoresForThisGame()) {
         return Promise.resolve({
           ok: true,

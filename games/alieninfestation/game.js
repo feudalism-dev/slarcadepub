@@ -2733,7 +2733,6 @@
     instructionsEl.style.whiteSpace = "";
     showMessages([]);
     showMenuOverlay();
-    SLArcade.endSession().catch(function () {});
   }
 
   function syncPlayerLine() {

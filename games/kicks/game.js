@@ -1260,6 +1260,18 @@
     startLevel();
   }
 
+  function returnToStartScreen(hint) {
+    phase = PHASE_MENU;
+    running = false;
+    setTouchPadVisible(false);
+    showMenuOverlay();
+    if (hint) {
+      endHintEl.textContent = hint;
+    } else if (score > 0) {
+      endHintEl.textContent = "Last score: " + score + " — tap START to play again.";
+    }
+  }
+
   function gameOver() {
     phase = PHASE_OVER;
     running = false;
@@ -1272,39 +1284,23 @@
     setOverlayButtons(true, false);
     setStartScreenExtras(false);
     setQuitVisible(false);
+    // Stay on this MOAP page — never endSession/clear media or navigate away.
     SLArcade.submitScore(score)
       .then(function (result) {
-        if (result && result.pendingMoapReport) {
-          return;
-        }
-        showMessages(result.messages || []);
-        if (result.unavailableMessage) {
+        showMessages((result && result.messages) || []);
+        if (result && result.unavailableMessage) {
           unavailableEl.textContent = result.unavailableMessage;
           unavailableEl.classList.remove("hidden");
         }
         return refreshLeaderboard();
       })
       .then(function () {
-        if (SLArcade.isHudMode()) {
-          phase = PHASE_MENU;
-          showMenuOverlay();
-          endHintEl.textContent = "Last score: " + score + " — tap START.";
-        } else {
-          btnStart.textContent = "PLAY AGAIN";
-          btnStart.disabled = false;
-          endHintEl.textContent = "Click cabinet in-world for a new session.";
-          setTimeout(function () {
-            if (SLArcade.canEndSession()) {
-              SLArcade.endSession().catch(function () {});
-            }
-          }, 2000);
-        }
+        returnToStartScreen("Last score: " + score + " — tap START to play again.");
       })
       .catch(function () {
         unavailableEl.textContent = SLArcade.SCORES_UNAVAILABLE_MSG;
         unavailableEl.classList.remove("hidden");
-        btnStart.textContent = "PLAY AGAIN";
-        btnStart.disabled = false;
+        returnToStartScreen("Score save timed out — tap START to play again.");
       });
   }
 
@@ -1312,10 +1308,7 @@
     if (phase === PHASE_MENU || phase === PHASE_OVER) {
       return;
     }
-    phase = PHASE_MENU;
-    running = false;
-    showMenuOverlay();
-    SLArcade.endSession().catch(function () {});
+    returnToStartScreen();
   }
 
   function showMessages(list) {
