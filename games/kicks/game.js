@@ -83,6 +83,7 @@
   var sparx = [];
   var sparxTimer = SPARX_TIMER_MAX;
   var superSparx = false;
+  var sparxUnlocked = false;
 
   var keys = {};
   var aiming = false;
@@ -449,10 +450,22 @@
   }
 
   function resetSparx() {
-    // No Sparx at level start — bar counts down until the first pair appears.
+    // No Sparx until the player finishes their first claim this level.
     sparx = [];
-    sparxTimer = Math.max(28 * 60, SPARX_TIMER_MAX - level * 60);
+    sparxTimer = SPARX_TIMER_MAX;
     superSparx = false;
+    sparxUnlocked = false;
+  }
+
+  function unlockSparxAfterFirstClaim() {
+    if (sparxUnlocked) {
+      return;
+    }
+    sparxUnlocked = true;
+    sparx = [];
+    sparxTimer = Math.max(22 * 60, SPARX_TIMER_MAX - level * 80);
+    banner = "Sparx incoming soon — top bar";
+    bannerT = 120;
   }
 
   function playTip() {
@@ -462,9 +475,16 @@
       }
       return "Keep moving — close your line on a white border to claim";
     }
+    if (!sparxUnlocked) {
+      return (
+        "Walk the white border, then cut into the DARK to draw. First claim is Sparx-free. Need " +
+        targetPct +
+        "%"
+      );
+    }
     if (!sparx.length) {
       return (
-        "Walk the white border safely, then hold toward the DARK to cut in and draw. Need " +
+        "Sparx soon (top bar). Walk borders, cut into dark to claim. Need " +
         targetPct +
         "%"
       );
@@ -792,6 +812,7 @@
     fuseOn = false;
     fuseIdle = 0;
     fillPct = calcFillPct();
+    unlockSparxAfterFirstClaim();
     updateHud();
 
     // Dual Qix split?
@@ -1087,32 +1108,37 @@
       return;
     }
 
-    sparxTimer--;
-    if (sparxTimer <= 0) {
-      sparxTimer = Math.max(18 * 60, SPARX_TIMER_MAX - level * 100);
-      if (sparx.length >= 4) {
-        superSparx = true;
-        var si;
-        for (si = 0; si < sparx.length; si++) {
-          sparx[si].super = true;
-        }
-        banner = "SUPER SPARX!";
-        bannerT = 100;
-      } else {
-        var hadSparx = sparx.length > 0;
-        spawnSparxPair();
-        if (!hadSparx) {
-          banner = "SPARX! Stay off their path — draw into the dark";
-          bannerT = 140;
+    if (sparxUnlocked) {
+      sparxTimer--;
+      if (sparxTimer <= 0) {
+        sparxTimer = Math.max(18 * 60, SPARX_TIMER_MAX - level * 100);
+        if (sparx.length >= 4) {
+          superSparx = true;
+          var si;
+          for (si = 0; si < sparx.length; si++) {
+            sparx[si].super = true;
+          }
+          banner = "SUPER SPARX!";
+          bannerT = 100;
+        } else {
+          var hadSparx = sparx.length > 0;
+          spawnSparxPair();
+          if (!hadSparx) {
+            banner = "SPARX! Purple dots on the border — avoid them";
+            bannerT = 140;
+          }
         }
       }
-    }
-    for (qi = 0; qi < sparx.length; qi++) {
-      updateSparxEntity(sparx[qi]);
-      if (sparx[qi].x === px && sparx[qi].y === py && invuln <= 0) {
-        killPlayer("SPARX!");
-        return;
+      for (qi = 0; qi < sparx.length; qi++) {
+        updateSparxEntity(sparx[qi]);
+        if (sparx[qi].x === px && sparx[qi].y === py && invuln <= 0) {
+          killPlayer("SPARX!");
+          return;
+        }
       }
+    } else if (sparx.length) {
+      // Belts-and-suspenders: never show border hunters before first claim.
+      sparx = [];
     }
 
     fillPct = calcFillPct();
@@ -1323,7 +1349,11 @@
     ctx.font = "bold 9px Segoe UI, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(
-      sparx.length ? "NEXT SPARX" : "SPARX ARRIVE WHEN EMPTY",
+      !sparxUnlocked
+        ? "SPARX AFTER FIRST CLAIM"
+        : sparx.length
+          ? "NEXT SPARX"
+          : "SPARX ARRIVE WHEN EMPTY",
       WORLD * 0.5,
       9
     );
