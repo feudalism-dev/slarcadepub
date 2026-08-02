@@ -342,6 +342,59 @@
     return inBounds(x, y) && field[idx(x, y)] === EMPTY;
   }
 
+  function nearestWalkable(fromX, fromY) {
+    if (isWalkable(fromX, fromY)) {
+      return { x: fromX, y: fromY };
+    }
+    var best = { x: Math.floor(COLS / 2), y: 0 };
+    var bestD = 1e9;
+    var x;
+    var y;
+    for (y = 0; y < ROWS; y++) {
+      for (x = 0; x < COLS; x++) {
+        if (!isWalkable(x, y)) {
+          continue;
+        }
+        var d = Math.abs(x - fromX) + Math.abs(y - fromY);
+        if (d < bestD) {
+          bestD = d;
+          best = { x: x, y: y };
+        }
+      }
+    }
+    return best;
+  }
+
+  function sanitizePlayer() {
+    if (!inBounds(px, py)) {
+      px = Math.floor(COLS / 2);
+      py = 0;
+    }
+    if (drawing) {
+      if (!stix.length) {
+        drawing = false;
+        fuseOn = false;
+      } else {
+        var tip = stix[stix.length - 1];
+        var onTip = px === tip.x && py === tip.y;
+        var onDraw = field[idx(px, py)] === DRAWING;
+        var onClaim = isWalkable(px, py);
+        if (!onTip && !onDraw && !onClaim) {
+          px = tip.x;
+          py = tip.y;
+        }
+      }
+    }
+    if (!drawing && !isWalkable(px, py)) {
+      var snap = nearestWalkable(px, py);
+      px = snap.x;
+      py = snap.y;
+      stix = [];
+      fuseOn = false;
+      fuseIdle = 0;
+    }
+  }
+
   function initField() {
     field = new Array(COLS * ROWS);
     var x;
@@ -622,6 +675,7 @@
       py = ny;
       moveCool = 2;
       fuseOn = false;
+      sanitizePlayer();
       return;
     }
 
@@ -660,6 +714,11 @@
     drawSlow = !usingBoost();
 
     if (isOpen(nx, ny)) {
+      // Cap path length so a runaway line cannot desync the cursor
+      if (stix.length > (COLS + ROWS) * 4) {
+        fuseOn = true;
+        return;
+      }
       if (!drawSlow) {
         stixAllSlow = false;
       }
@@ -667,9 +726,10 @@
       stix.push({ x: nx, y: ny });
       px = nx;
       py = ny;
-      moveCool = drawSlow ? 3 : 1;
+      moveCool = drawSlow ? 3 : 2;
       fuseOn = false;
       fuseIdle = 0;
+      sanitizePlayer();
       return;
     }
 
@@ -680,7 +740,12 @@
       completeClaim();
       moveCool = 3;
       fuseIdle = 0;
+      sanitizePlayer();
+      return;
     }
+
+    // Blocked — do not leave the path / hide off a valid cell
+    sanitizePlayer();
   }
 
   function flood(sx, sy, mark) {
@@ -1201,6 +1266,20 @@
       }
     }
 
+    // Bright edge on claim/open boundary so the walkable path stays visible
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+    ctx.lineWidth = 1.25;
+    for (y = 0; y < ROWS; y++) {
+      for (x = 0; x < COLS; x++) {
+        if (field[idx(x, y)] !== CLAIMED) {
+          continue;
+        }
+        if (isOpen(x + 1, y) || isOpen(x - 1, y) || isOpen(x, y + 1) || isOpen(x, y - 1)) {
+          ctx.strokeRect(x * CELL + 0.5, y * CELL + 0.5, CELL - 1, CELL - 1);
+        }
+      }
+    }
+
     // Grid haze on open
     ctx.strokeStyle = "rgba(80, 120, 180, 0.12)";
     ctx.lineWidth = 1;
@@ -1311,29 +1390,49 @@
       }
     }
 
-    // Player cursor
-    if (invuln <= 0 || Math.floor(invuln / 4) % 2 === 0) {
-      var pc = cellCenter(px, py);
-      ctx.strokeStyle = drawing ? (drawSlow ? "#ffb84a" : "#3df0ff") : "#ffffff";
-      ctx.fillStyle = "rgba(255,255,255,0.15)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(pc.x, pc.y - 6);
-      ctx.lineTo(pc.x + 6, pc.y);
-      ctx.lineTo(pc.x, pc.y + 6);
-      ctx.lineTo(pc.x - 6, pc.y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
+    // Player cursor — always visible (invuln pulses alpha, never fully hides)
+    sanitizePlayer();
+    var pc = cellCenter(px, py);
+    var pulse =
+      invuln > 0 ? 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(invuln * 0.35)) : 1;
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = "#000000";
+    ctx.beginPath();
+    ctx.moveTo(pc.x, pc.y - 9);
+    ctx.lineTo(pc.x + 9, pc.y);
+    ctx.lineTo(pc.x, pc.y + 9);
+    ctx.lineTo(pc.x - 9, pc.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = drawing ? (drawSlow ? "#ffb84a" : "#3df0ff") : "#ffffff";
+    ctx.fillStyle = drawing
+      ? drawSlow
+        ? "rgba(255,184,74,0.55)"
+        : "rgba(61,240,255,0.5)"
+      : "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = ctx.strokeStyle;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(pc.x, pc.y - 7);
+    ctx.lineTo(pc.x + 7, pc.y);
+    ctx.lineTo(pc.x, pc.y + 7);
+    ctx.lineTo(pc.x - 7, pc.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    ctx.shadowBlur = 0;
 
-    // Sparx meter (countdown until next Sparx wave)
+    // Sparx meter along bottom (keep top edge clear for the player cursor)
     var meterW = WORLD * 0.5;
     var meterX = (WORLD - meterW) / 2;
+    var meterY = WORLD - 18;
     ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.fillRect(meterX - 2, 2, meterW + 4, 16);
+    ctx.fillRect(meterX - 2, meterY - 2, meterW + 4, 16);
     ctx.fillStyle = "rgba(40,12,18,0.9)";
-    ctx.fillRect(meterX, 10, meterW, 6);
+    ctx.fillRect(meterX, meterY + 6, meterW, 6);
     ctx.fillStyle = superSparx ? "#ff4d6d" : "#ff6b6b";
     var meterFill = meterW * (sparxTimer / SPARX_TIMER_MAX);
     if (meterFill < 0) {
@@ -1343,7 +1442,7 @@
       meterFill = meterW;
     }
     if (meterFill > 0) {
-      ctx.fillRect(meterX, 10, meterFill, 6);
+      ctx.fillRect(meterX, meterY + 6, meterFill, 6);
     }
     ctx.fillStyle = "#ffb4b4";
     ctx.font = "bold 9px Segoe UI, sans-serif";
@@ -1355,7 +1454,7 @@
           ? "NEXT SPARX"
           : "SPARX ARRIVE WHEN EMPTY",
       WORLD * 0.5,
-      9
+      meterY + 5
     );
   }
 
