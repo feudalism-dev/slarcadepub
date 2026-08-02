@@ -1354,15 +1354,9 @@
     setStartScreenExtras(false);
     setQuitVisible(false);
 
-    var hudMode = SLArcade.isHudMode();
-    var canEndCabinet = SLArcade.canEndSession() && !hudMode;
     var recoveryTimer = setTimeout(function () {
       if (phase === PHASE_OVER && btnStart.disabled) {
-        if (hudMode) {
-          returnToStartScreen("Tap START to play again.");
-        } else {
-          enablePlayAgain("Tap PLAY AGAIN, or click the cabinet in-world for a new session.");
-        }
+        returnToStartScreen("Tap START to play again.");
       }
     }, 8000);
 
@@ -1382,12 +1376,6 @@
         endHintEl.textContent = "Last score: " + score + " — tap START to play again.";
       }
       refreshLeaderboard();
-    }
-
-    function enablePlayAgain(hint) {
-      btnStart.textContent = "PLAY AGAIN";
-      btnStart.disabled = false;
-      endHintEl.textContent = hint || "Tap PLAY AGAIN for another run.";
     }
 
     SLArcade.submitScore(score)
