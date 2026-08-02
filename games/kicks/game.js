@@ -82,7 +82,7 @@
   var revealImg = null;
   var revealReady = false;
   var imgCfg = {
-    provider: "catalog",
+    provider: "loremflickr",
     category: "space,cyberpunk",
     maturity: "general",
     custom: "",
@@ -97,7 +97,7 @@
     } catch (e) {
       q = {};
     }
-    imgCfg.provider = (q.img_provider || "catalog").toLowerCase();
+    imgCfg.provider = (q.img_provider || "loremflickr").toLowerCase();
     imgCfg.category = q.img_category || "space,cyberpunk";
     imgCfg.maturity = (q.img_maturity || "general").toLowerCase();
     imgCfg.custom = q.img_custom || "";
@@ -105,6 +105,29 @@
     if (imgCfg.maturity !== "adult" && imgCfg.maturity !== "moderate") {
       imgCfg.maturity = "general";
     }
+  }
+
+  function categoryTagPath() {
+    var tags = String(imgCfg.category || "")
+      .split(",")
+      .map(function (s) {
+        return s.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      })
+      .filter(Boolean);
+    if (!tags.length) {
+      tags = ["nature"];
+    }
+    // LoremFlickr: /width/height/tag1,tag2
+    return tags.slice(0, 3).join(",");
+  }
+
+  function freshImageSeed() {
+    return String(
+      Math.floor(Math.random() * 900000) +
+        1000 +
+        (level || 1) * 7919 +
+        (Date.now() % 100000)
+    );
   }
 
   function maturityRank(m) {
@@ -159,26 +182,64 @@
     if (imgCfg.provider === "custom" && imgCfg.custom) {
       return imgCfg.custom;
     }
+    // Category + random remote image each seed (default)
+    if (
+      imgCfg.provider === "loremflickr" ||
+      imgCfg.provider === "flickr" ||
+      imgCfg.provider === "random"
+    ) {
+      var tags = categoryTagPath();
+      return (
+        "https://loremflickr.com/600/600/" +
+        tags +
+        "?lock=" +
+        encodeURIComponent(imgCfg.seed)
+      );
+    }
     if (imgCfg.provider === "picsum") {
       return "https://picsum.photos/seed/kicks" + imgCfg.seed + "/600/600";
     }
-    return null;
+    if (imgCfg.provider === "catalog") {
+      return null;
+    }
+    // Unknown provider → treat as loremflickr
+    var fallbackTags = categoryTagPath();
+    return (
+      "https://loremflickr.com/600/600/" +
+      fallbackTags +
+      "?lock=" +
+      encodeURIComponent(imgCfg.seed)
+    );
   }
 
   function loadRevealImage() {
     revealReady = false;
     revealImg = new Image();
-    revealImg.crossOrigin = "anonymous";
     var direct = resolveImageUrl();
     function useUrl(url) {
       if (!url) {
         revealReady = false;
         return;
       }
+      var triedNoCors = false;
+      revealImg = new Image();
+      revealImg.crossOrigin = "anonymous";
       revealImg.onload = function () {
         revealReady = true;
       };
       revealImg.onerror = function () {
+        if (!triedNoCors) {
+          triedNoCors = true;
+          revealImg = new Image();
+          revealImg.onload = function () {
+            revealReady = true;
+          };
+          revealImg.onerror = function () {
+            revealReady = false;
+          };
+          revealImg.src = url;
+          return;
+        }
         revealReady = false;
       };
       revealImg.src = url;
@@ -187,6 +248,7 @@
       useUrl(direct);
       return;
     }
+    // catalog provider only
     if (catalogCache) {
       useUrl(pickCatalogUrl(catalogCache));
       return;
@@ -200,7 +262,12 @@
         useUrl(pickCatalogUrl(data));
       })
       .catch(function () {
-        useUrl("https://picsum.photos/seed/kicks" + imgCfg.seed + "/600/600");
+        useUrl(
+          "https://loremflickr.com/600/600/" +
+            categoryTagPath() +
+            "?lock=" +
+            encodeURIComponent(imgCfg.seed)
+        );
       });
   }
 
@@ -1125,9 +1192,8 @@
     initField();
     spawnQixes();
     resetSparx();
-    imgCfg.seed = String(
-      (parseInt(imgCfg.seed, 10) || 0) + level * 9973
-    );
+    // New random remote image every level (provider uses seed + CATEGORY tags)
+    imgCfg.seed = freshImageSeed();
     loadRevealImage();
     fillPct = calcFillPct();
     updateHud();
