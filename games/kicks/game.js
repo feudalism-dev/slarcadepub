@@ -89,19 +89,45 @@
     seed: "1",
   };
   var catalogCache = null;
+  var loopAlive = false;
+
+  function queryParam(name, fallback) {
+    try {
+      var search = window.location.search || "";
+      if (search.charAt(0) === "?") {
+        search = search.substring(1);
+      }
+      var parts = search.split("&");
+      var i;
+      for (i = 0; i < parts.length; i++) {
+        if (!parts[i]) {
+          continue;
+        }
+        var eq = parts[i].indexOf("=");
+        var k;
+        var v;
+        if (eq < 0) {
+          k = decodeURIComponent(parts[i]);
+          v = "";
+        } else {
+          k = decodeURIComponent(parts[i].substring(0, eq));
+          v = decodeURIComponent(parts[i].substring(eq + 1));
+        }
+        if (k === name) {
+          return v;
+        }
+      }
+    } catch (e) {}
+    return fallback;
+  }
 
   function parseImgConfig() {
-    var q = {};
-    try {
-      q = Object.fromEntries(new URLSearchParams(window.location.search));
-    } catch (e) {
-      q = {};
-    }
-    imgCfg.provider = (q.img_provider || "loremflickr").toLowerCase();
-    imgCfg.category = q.img_category || "space,cyberpunk";
-    imgCfg.maturity = (q.img_maturity || "general").toLowerCase();
-    imgCfg.custom = q.img_custom || "";
-    imgCfg.seed = q.img_seed || String(Math.floor(Math.random() * 999999));
+    imgCfg.provider = (queryParam("img_provider", "loremflickr") || "loremflickr").toLowerCase();
+    imgCfg.category = queryParam("img_category", "space,cyberpunk") || "space,cyberpunk";
+    imgCfg.maturity = (queryParam("img_maturity", "general") || "general").toLowerCase();
+    imgCfg.custom = queryParam("img_custom", "") || "";
+    imgCfg.seed =
+      queryParam("img_seed", "") || String(Math.floor(Math.random() * 999999));
     if (imgCfg.maturity !== "adult" && imgCfg.maturity !== "moderate") {
       imgCfg.maturity = "general";
     }
@@ -214,41 +240,42 @@
 
   function loadRevealImage() {
     revealReady = false;
-    revealImg = new Image();
     var direct = resolveImageUrl();
     function useUrl(url) {
       if (!url) {
         revealReady = false;
+        revealImg = null;
         return;
       }
       var triedNoCors = false;
-      revealImg = new Image();
-      revealImg.crossOrigin = "anonymous";
-      revealImg.onload = function () {
-        revealReady = true;
-      };
-      revealImg.onerror = function () {
-        if (!triedNoCors) {
-          triedNoCors = true;
-          revealImg = new Image();
-          revealImg.onload = function () {
-            revealReady = true;
-          };
-          revealImg.onerror = function () {
-            revealReady = false;
-          };
-          revealImg.src = url;
-          return;
+      function bind(img, withCors) {
+        revealImg = img;
+        if (withCors) {
+          img.crossOrigin = "anonymous";
         }
-        revealReady = false;
-      };
-      revealImg.src = url;
+        img.onload = function () {
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            revealReady = true;
+          } else {
+            revealReady = false;
+          }
+        };
+        img.onerror = function () {
+          if (withCors && !triedNoCors) {
+            triedNoCors = true;
+            bind(new Image(), false);
+            return;
+          }
+          revealReady = false;
+        };
+        img.src = url;
+      }
+      bind(new Image(), true);
     }
     if (direct) {
       useUrl(direct);
       return;
     }
-    // catalog provider only
     if (catalogCache) {
       useUrl(pickCatalogUrl(catalogCache));
       return;
@@ -1017,46 +1044,41 @@
     ctx.translate(ox, oy);
     ctx.scale(scale, scale);
 
-    // Unclaimed fog
+    // Unclaimed fog base
     ctx.fillStyle = "#0a1020";
     ctx.fillRect(0, 0, WORLD, WORLD);
 
-    // Revealed image in claimed cells
+    // Reveal image under claimed cells (one drawImage — safe + CEF-friendly)
     var x;
     var y;
-    if (revealReady && revealImg) {
-      for (y = 0; y < ROWS; y++) {
-        for (x = 0; x < COLS; x++) {
-          if (field[idx(x, y)] !== CLAIMED) {
-            continue;
-          }
-          var sx = (x / COLS) * revealImg.width;
-          var sy = (y / ROWS) * revealImg.height;
-          var sw = revealImg.width / COLS;
-          var sh = revealImg.height / ROWS;
-          ctx.drawImage(
-            revealImg,
-            sx,
-            sy,
-            sw,
-            sh,
-            x * CELL,
-            y * CELL,
-            CELL + 0.5,
-            CELL + 0.5
-          );
-        }
-      }
-      // Soft tint edge on claimed
-      ctx.fillStyle = "rgba(61, 240, 255, 0.06)";
-      for (y = 0; y < ROWS; y++) {
-        for (x = 0; x < COLS; x++) {
-          if (field[idx(x, y)] === CLAIMED) {
-            ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+    var drewReveal = false;
+    if (
+      revealReady &&
+      revealImg &&
+      revealImg.naturalWidth > 0 &&
+      revealImg.naturalHeight > 0
+    ) {
+      try {
+        ctx.save();
+        ctx.beginPath();
+        for (y = 0; y < ROWS; y++) {
+          for (x = 0; x < COLS; x++) {
+            if (field[idx(x, y)] === CLAIMED) {
+              ctx.rect(x * CELL, y * CELL, CELL + 0.5, CELL + 0.5);
+            }
           }
         }
+        ctx.clip();
+        ctx.drawImage(revealImg, 0, 0, WORLD, WORLD);
+        ctx.fillStyle = "rgba(61, 240, 255, 0.06)";
+        ctx.fillRect(0, 0, WORLD, WORLD);
+        ctx.restore();
+        drewReveal = true;
+      } catch (drawErr) {
+        drewReveal = false;
       }
-    } else {
+    }
+    if (!drewReveal) {
       ctx.fillStyle = "#152238";
       for (y = 0; y < ROWS; y++) {
         for (x = 0; x < COLS; x++) {
@@ -1155,7 +1177,16 @@
     ctx.fillStyle = "rgba(0,0,0,0.45)";
     ctx.fillRect(meterX, 4, meterW, 6);
     ctx.fillStyle = superSparx ? "#ff4d6d" : "#ff6b6b";
-    ctx.fillRect(meterX, 4, meterW * (sparxTimer / SPARX_TIMER_MAX), 6);
+    var meterFill = meterW * (sparxTimer / SPARX_TIMER_MAX);
+    if (meterFill < 0) {
+      meterFill = 0;
+    }
+    if (meterFill > meterW) {
+      meterFill = meterW;
+    }
+    if (meterFill > 0) {
+      ctx.fillRect(meterX, 4, meterFill, 6);
+    }
   }
 
   function drawQix(q) {
@@ -1217,6 +1248,7 @@
     unavailableEl.classList.add("hidden");
     endHintEl.textContent = "";
     startLevel();
+    ensureLoop();
   }
 
   function nextLevel() {
@@ -1365,22 +1397,37 @@
     } catch (e) {}
   }
 
-  function loop() {
-    if (phase === PHASE_READY) {
-      readyTimer--;
-      if (readyTimer <= 0) {
-        phase = PHASE_PLAYING;
-        running = true;
-        overlay.classList.add("hidden");
-        setQuitVisible(true);
-        grabFocus();
-      } else if (readyTimer < 40) {
-        overlayTitle.textContent = "GO!";
-      }
-    } else if (phase === PHASE_PLAYING && running) {
-      updatePlaying();
+  function ensureLoop() {
+    if (loopAlive) {
+      return;
     }
-    drawWorld();
+    loopAlive = true;
+    requestAnimationFrame(loop);
+  }
+
+  function loop() {
+    try {
+      if (phase === PHASE_READY) {
+        readyTimer--;
+        if (readyTimer <= 0) {
+          phase = PHASE_PLAYING;
+          running = true;
+          overlay.classList.add("hidden");
+          setQuitVisible(true);
+          grabFocus();
+        } else if (readyTimer < 40) {
+          overlayTitle.textContent = "GO!";
+        }
+      } else if (phase === PHASE_PLAYING && running) {
+        updatePlaying();
+      }
+      drawWorld();
+    } catch (loopErr) {
+      // Keep the frame loop alive even if a draw/update throws (common in SL CEF)
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("Kicks frame error", loopErr);
+      }
+    }
     requestAnimationFrame(loop);
   }
 
@@ -1402,9 +1449,26 @@
   }
 
   btnStart.addEventListener("click", startGame);
+  btnStart.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    startGame();
+  });
   btnNext.addEventListener("click", nextLevel);
+  btnNext.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    nextLevel();
+  });
   btnQuit.addEventListener("click", quitGame);
+  btnQuit.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    quitGame();
+  });
   btnLeaderboard.addEventListener("click", function () {
+    leaderboardModal.classList.remove("hidden");
+    refreshLeaderboard();
+  });
+  btnLeaderboard.addEventListener("touchend", function (e) {
+    e.preventDefault();
     leaderboardModal.classList.remove("hidden");
     refreshLeaderboard();
   });
@@ -1421,15 +1485,18 @@
   window.addEventListener("resize", resizeCanvas);
 
   parseImgConfig();
-  loadRevealImage();
   initField();
   resizeCanvas();
   showMenuOverlay();
   syncPlayerLine();
+  // Load art after first paint so a bad image URL cannot block menu/start
+  setTimeout(function () {
+    loadRevealImage();
+  }, 50);
   refreshLeaderboard().catch(function () {});
   SLArcade.onSession(function () {
     syncPlayerLine();
     refreshLeaderboard().catch(function () {});
   });
-  requestAnimationFrame(loop);
+  ensureLoop();
 })();
