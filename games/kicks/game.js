@@ -85,6 +85,9 @@
   var superSparx = false;
 
   var keys = {};
+  var aiming = false;
+  var aimDx = 0;
+  var aimDy = 0;
   var revealImg = null;
   var revealReady = false;
   var imgCfg = {
@@ -446,24 +449,31 @@
   }
 
   function resetSparx() {
+    // No Sparx at level start — bar counts down until the first pair appears.
     sparx = [];
-    sparxTimer = Math.max(20 * 60, SPARX_TIMER_MAX - level * 90);
+    sparxTimer = Math.max(28 * 60, SPARX_TIMER_MAX - level * 60);
     superSparx = false;
-    spawnSparxPair();
   }
 
   function playTip() {
     if (drawing) {
       if (usingBoost()) {
-        return "BOOST on — release Space/X for slow (2×). Close line to a border";
+        return "BOOST on — release Space for slow (2×). Close line on a white border";
       }
-      return "SLOW draw (2×) — hold Space/X for speed. Close line to a border";
+      return "Keep moving — close your line on a white border to claim";
+    }
+    if (!sparx.length) {
+      return (
+        "HOLD ↓ / S or drag DOWN into the dark to draw. Sparx come when the top bar empties. Need " +
+        targetPct +
+        "%"
+      );
     }
     if (fillPct + 0.05 < targetPct) {
       return (
-        "Walk borders, then HOLD arrows into dark to draw. Need " +
+        "Purple diamonds = Sparx (deadly on borders). Draw loops into dark. Need " +
         targetPct +
-        "% fill"
+        "%"
       );
     }
     return "Target reached — finishing level…";
@@ -515,11 +525,12 @@
     overlayTitle.textContent = "KICKS";
     instructionsEl.textContent =
       "HOW TO PLAY\n" +
-      "1) Walk the white borders with arrows / WASD (no button).\n" +
-      "2) HOLD arrows into the dark area to draw at SLOW speed (2× score if all slow).\n" +
-      "3) Hold Space or X / BOOST for a limited fast burst; release to go back to slow.\n" +
-      "4) Close the line on a border to claim & reveal. Repeat until FILL hits the target %.\n" +
-      "Avoid the spinning Qix while your line is open. Hold keys — don't tap.";
+      "• White diamond = you. Start on the top edge.\n" +
+      "• HOLD Down (↓ / S) or drag downward on the screen into the DARK area to draw a line.\n" +
+      "• Keep holding and swing left/right, then back onto a white edge to claim that area.\n" +
+      "• Top red bar = countdown until purple Sparx appear (they kill you on the borders).\n" +
+      "• Space / BOOST = limited fast draw. All-slow claims score 2×.\n" +
+      "Goal: fill the FILL % shown before you run out of lives.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -636,7 +647,7 @@
       stix.push({ x: nx, y: ny });
       px = nx;
       py = ny;
-      moveCool = drawSlow ? 4 : 2;
+      moveCool = drawSlow ? 3 : 1;
       fuseOn = false;
       fuseIdle = 0;
       return;
@@ -872,7 +883,9 @@
     }
     px = Math.floor(COLS / 2);
     py = 0;
-    invuln = 90;
+    invuln = 180;
+    banner = "HOLD ↓ or drag DOWN into the dark";
+    bannerT = 120;
   }
 
   function updateQix(q) {
@@ -953,25 +966,17 @@
       if (!opts.length) {
         return;
       }
-      // Bias toward player
-      var best = opts[0];
-      var bestD = 1e9;
-      var i;
-      for (i = 0; i < opts.length; i++) {
-        var d = Math.abs(opts[i].x - px) + Math.abs(opts[i].y - py);
-        if (s.dir) {
-          d = -d;
-        }
-        // Mild chase
-        var scoreD = Math.abs(opts[i].x - px) + Math.abs(opts[i].y - py);
-        if (Math.random() < 0.7) {
+      // Mostly patrol; light chase so they are avoidable
+      var best = opts[(Math.random() * opts.length) | 0];
+      if (Math.random() < 0.35) {
+        var bestD = 1e9;
+        var i;
+        for (i = 0; i < opts.length; i++) {
+          var scoreD = Math.abs(opts[i].x - px) + Math.abs(opts[i].y - py);
           if (scoreD < bestD) {
             bestD = scoreD;
             best = opts[i];
           }
-        } else if (Math.random() < 0.3) {
-          best = opts[i];
-          break;
         }
       }
       s.x = best.x;
@@ -1034,14 +1039,19 @@
 
     var dx = 0;
     var dy = 0;
-    if (keys.ArrowLeft || keys.left || keys.a || keys.A) {
+    // Prefer vertical when leaving the top/bottom edge so "down into dark" wins in SL/CEF.
+    if (keys.ArrowDown || keys.down || keys.s || keys.S) {
+      dy = 1;
+    } else if (keys.ArrowUp || keys.up || keys.w || keys.W) {
+      dy = -1;
+    } else if (keys.ArrowLeft || keys.left || keys.a || keys.A) {
       dx = -1;
     } else if (keys.ArrowRight || keys.right || keys.d || keys.D) {
       dx = 1;
-    } else if (keys.ArrowUp || keys.up || keys.w || keys.W) {
-      dy = -1;
-    } else if (keys.ArrowDown || keys.down || keys.s || keys.S) {
-      dy = 1;
+    }
+    if (!dx && !dy && aiming) {
+      dx = aimDx;
+      dy = aimDy;
     }
     if (dx || dy) {
       tryMove(dx, dy);
@@ -1089,7 +1099,12 @@
         banner = "SUPER SPARX!";
         bannerT = 100;
       } else {
+        var hadSparx = sparx.length > 0;
         spawnSparxPair();
+        if (!hadSparx) {
+          banner = "SPARX! Stay off their path — draw into the dark";
+          bannerT = 140;
+        }
       }
     }
     for (qi = 0; qi < sparx.length; qi++) {
@@ -1226,6 +1241,50 @@
       ctx.shadowBlur = 0;
     }
 
+    // Coach: pulse arrow into open space when SAFE on an edge
+    if (
+      phase === PHASE_PLAYING &&
+      !drawing &&
+      fillPct < targetPct &&
+      Math.floor(frame / 18) % 2 === 0
+    ) {
+      var coach = null;
+      if (isOpen(px, py + 1)) {
+        coach = { x: 0, y: 1 };
+      } else if (isOpen(px, py - 1)) {
+        coach = { x: 0, y: -1 };
+      } else if (isOpen(px + 1, py)) {
+        coach = { x: 1, y: 0 };
+      } else if (isOpen(px - 1, py)) {
+        coach = { x: -1, y: 0 };
+      }
+      if (coach) {
+        var cc = cellCenter(px, py);
+        ctx.strokeStyle = "#ffb84a";
+        ctx.fillStyle = "#ffb84a";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cc.x, cc.y);
+        ctx.lineTo(cc.x + coach.x * 22, cc.y + coach.y * 22);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cc.x + coach.x * 26, cc.y + coach.y * 26);
+        ctx.lineTo(
+          cc.x + coach.x * 14 - coach.y * 7,
+          cc.y + coach.y * 14 + coach.x * 7
+        );
+        ctx.lineTo(
+          cc.x + coach.x * 14 + coach.y * 7,
+          cc.y + coach.y * 14 - coach.x * 7
+        );
+        ctx.closePath();
+        ctx.fill();
+        ctx.font = "bold 11px Segoe UI, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("DRAW", cc.x + coach.x * 36, cc.y + coach.y * 36 + 4);
+      }
+    }
+
     // Player cursor
     if (invuln <= 0 || Math.floor(invuln / 4) % 2 === 0) {
       var pc = cellCenter(px, py);
@@ -1242,11 +1301,13 @@
       ctx.stroke();
     }
 
-    // Sparx meter
+    // Sparx meter (countdown until next Sparx wave)
     var meterW = WORLD * 0.5;
     var meterX = (WORLD - meterW) / 2;
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.fillRect(meterX, 4, meterW, 6);
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(meterX - 2, 2, meterW + 4, 16);
+    ctx.fillStyle = "rgba(40,12,18,0.9)";
+    ctx.fillRect(meterX, 10, meterW, 6);
     ctx.fillStyle = superSparx ? "#ff4d6d" : "#ff6b6b";
     var meterFill = meterW * (sparxTimer / SPARX_TIMER_MAX);
     if (meterFill < 0) {
@@ -1256,8 +1317,16 @@
       meterFill = meterW;
     }
     if (meterFill > 0) {
-      ctx.fillRect(meterX, 4, meterFill, 6);
+      ctx.fillRect(meterX, 10, meterFill, 6);
     }
+    ctx.fillStyle = "#ffb4b4";
+    ctx.font = "bold 9px Segoe UI, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      sparx.length ? "NEXT SPARX" : "SPARX ARRIVE WHEN EMPTY",
+      WORLD * 0.5,
+      9
+    );
   }
 
   function drawQix(q) {
@@ -1301,9 +1370,9 @@
     updateHud();
     beginReady(
       "LEVEL " + level,
-      "Goal: fill " +
+      "Hold ↓ into the dark to draw. Claim " +
         targetPct +
-        "%. Arrows into dark = slow draw (2×). Hold Space/X for a limited fast burst. Multiplier ×" +
+        "% before Sparx (top bar). Space = boost. ×" +
         scoreMult
     );
   }
@@ -1626,6 +1695,79 @@
     el.addEventListener("touchcancel", up, { passive: false });
   }
 
+  function worldFromClient(clientX, clientY) {
+    var rect = canvas.getBoundingClientRect();
+    var dw = rect.width || 1;
+    var dh = rect.height || 1;
+    var scale = Math.min(dw / WORLD, dh / WORLD);
+    var ox = (dw - WORLD * scale) / 2;
+    var oy = (dh - WORLD * scale) / 2;
+    return {
+      x: (clientX - rect.left - ox) / scale,
+      y: (clientY - rect.top - oy) / scale,
+    };
+  }
+
+  function updateAimFromClient(clientX, clientY) {
+    var w = worldFromClient(clientX, clientY);
+    var pcx = (px + 0.5) * CELL;
+    var pcy = (py + 0.5) * CELL;
+    var dx = w.x - pcx;
+    var dy = w.y - pcy;
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) {
+      aimDx = 0;
+      aimDy = 0;
+      return;
+    }
+    if (Math.abs(dy) >= Math.abs(dx)) {
+      aimDx = 0;
+      aimDy = dy > 0 ? 1 : -1;
+    } else {
+      aimDx = dx > 0 ? 1 : -1;
+      aimDy = 0;
+    }
+  }
+
+  function setupPointerAim() {
+    function down(ev) {
+      if (phase !== PHASE_PLAYING) {
+        return;
+      }
+      var t = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+      aiming = true;
+      updateAimFromClient(t.clientX, t.clientY);
+      grabFocus();
+      if (ev.cancelable) {
+        ev.preventDefault();
+      }
+    }
+    function move(ev) {
+      if (!aiming) {
+        return;
+      }
+      var t = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+      updateAimFromClient(t.clientX, t.clientY);
+      if (ev.cancelable) {
+        ev.preventDefault();
+      }
+    }
+    function up(ev) {
+      aiming = false;
+      aimDx = 0;
+      aimDy = 0;
+      if (ev && ev.cancelable) {
+        ev.preventDefault();
+      }
+    }
+    canvas.addEventListener("mousedown", down);
+    canvas.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    canvas.addEventListener("touchstart", down, { passive: false });
+    canvas.addEventListener("touchmove", move, { passive: false });
+    canvas.addEventListener("touchend", up, { passive: false });
+    canvas.addEventListener("touchcancel", up, { passive: false });
+  }
+
   function setupTouchPad() {
     bindPadButton(
       document.getElementById("pad-up"),
@@ -1706,8 +1848,10 @@
           overlay.classList.add("hidden");
           setQuitVisible(true);
           setTouchPadVisible(true);
-          invuln = 90;
+          invuln = 180;
           grabFocus();
+          banner = "HOLD ↓ or drag DOWN into the dark";
+          bannerT = 160;
         } else if (readyTimer < 40) {
           overlayTitle.textContent = "GO!";
         }
@@ -1755,9 +1899,8 @@
   window.addEventListener("keyup", handleKeyUp, true);
   document.addEventListener("keydown", handleKeyDown, true);
   document.addEventListener("keyup", handleKeyUp, true);
-  canvas.addEventListener("mousedown", grabFocus);
-  canvas.addEventListener("touchstart", grabFocus, { passive: true });
   window.addEventListener("resize", resizeCanvas);
+  setupPointerAim();
   setupTouchPad();
   setTouchPadVisible(false);
 
