@@ -16,6 +16,43 @@ body {
   inset: 0;
 }
 
+:root {
+  --color-bg: #020814;
+  --color-ocean-top: #0a2a48;
+  --color-ocean-bot: #021018;
+  --color-sky: #050d18;
+  --color-horizon: #3a90c8;
+  --color-ship: #c8e8ff;
+  --color-ship-cmd: #ffe066;
+  --color-torp: #7cf5ff;
+  --color-blast: #ff6644;
+  --color-depth: #ff4466;
+  --color-hud: #9ad8ff;
+  --color-cyan: #00e8ff;
+  --color-cyan-dim: rgba(0, 232, 255, 0.35);
+  --color-text: #d8f4ff;
+  --font-main: "Segoe UI", Tahoma, sans-serif;
+  --font-mono: "VT323", "Courier New", monospace;
+}
+
+html.classic,
+html.classic body {
+  --color-bg: #001000;
+  --color-ocean-top: #003300;
+  --color-ocean-bot: #001a00;
+  --color-sky: #000800;
+  --color-horizon: #00aa00;
+  --color-ship: #00ff00;
+  --color-ship-cmd: #ffff00;
+  --color-torp: #00ff88;
+  --color-blast: #ff8800;
+  --color-depth: #ff4400;
+  --color-hud: #88ff88;
+  --color-cyan: #00ff00;
+  --color-cyan-dim: rgba(0, 255, 0, 0.35);
+  --color-text: #00ff00;
+}
+
 #app {
   position: fixed;
   inset: 0;
@@ -29,7 +66,34 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #000;
+  background: var(--color-bg);
+}
+
+/* Periscope vignette mask */
+#game-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.45) 65%, var(--color-bg) 100%);
+  z-index: 5;
+}
+
+/* Scanline overlay for classic mode */
+html.classic #game-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
+  );
+  z-index: 6;
+  opacity: 0.6;
 }
 
 canvas {
@@ -187,6 +251,32 @@ canvas {
   pointer-events: auto;
 }
 
+#btn-classic-toggle {
+  position: absolute;
+  top: 8px;
+  right: 72px;
+  z-index: 3;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--color-cyan);
+  background: rgba(0, 20, 40, 0.9);
+  color: var(--color-cyan);
+  cursor: pointer;
+  pointer-events: auto;
+  font-family: var(--font-mono);
+}
+
+#btn-classic-toggle:hover {
+  background: rgba(0, 60, 100, 0.95);
+}
+
+html.classic #btn-classic-toggle {
+  background: rgba(0, 60, 0, 0.95);
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+}
+
 #btn-quit:hover {
   background: rgba(80, 20, 20, 0.95);
 }
@@ -199,6 +289,10 @@ canvas {
   background: #143848;
 }
 
+html.classic #overlay button:hover {
+  background: #003300;
+}
+
 #hud {
   position: absolute;
   top: 8px;
@@ -208,8 +302,28 @@ canvas {
   font-size: 0.85rem;
   text-shadow: 0 0 4px #000;
   pointer-events: none;
-  color: #9ad8ff;
+  color: var(--color-hud);
   letter-spacing: 0.04em;
+}
+
+/* Top-center score display */
+#score-display {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  color: var(--color-hud);
+  text-shadow: 0 0 8px var(--color-cyan), 0 0 16px var(--color-cyan);
+  letter-spacing: 0.1em;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+html.classic #score-display {
+  text-shadow: 0 0 8px var(--color-cyan), 0 0 16px var(--color-cyan);
 }
 
 .modal {
@@ -287,4 +401,103 @@ canvas {
 
 #btn-modal-close:hover {
   background: #1a2a48;
+}
+
+/* Classic mode overrides */
+html.classic #overlay {
+  background: rgba(0, 8, 0, 0.85);
+}
+
+html.classic #overlay > div {
+  background: rgba(0, 16, 0, 0.9);
+  border-color: var(--color-cyan);
+  box-shadow: 0 0 32px rgba(0, 255, 0, 0.15);
+}
+
+html.classic #overlay h1 {
+  color: var(--color-cyan);
+  text-shadow: 0 0 16px var(--color-cyan);
+}
+
+html.classic #instructions,
+html.classic #player-line,
+html.classic #end-hint,
+html.classic .start-scores p {
+  color: var(--color-text);
+}
+
+html.classic .start-scores {
+  background: rgba(0, 24, 0, 0.85);
+  border-color: var(--color-cyan);
+}
+
+html.classic #high-score {
+  color: var(--color-cyan);
+}
+
+html.classic #scores-unavailable {
+  background: #2a1800;
+  border-color: #664400;
+  color: #ffcc00;
+}
+
+html.classic .msg {
+  color: #ffff00;
+}
+
+html.classic .modal {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+html.classic .modal-panel {
+  background: linear-gradient(180deg, #0a140a, #050805);
+  border-color: var(--color-cyan);
+  box-shadow: 0 8px 32px rgba(0, 255, 0, 0.2);
+}
+
+html.classic .modal-panel h2 {
+  color: var(--color-cyan);
+  text-shadow: 0 0 8px var(--color-cyan);
+}
+
+html.classic #leaderboard li {
+  border-color: #1e301e;
+}
+
+html.classic #leaderboard .rank {
+  color: var(--color-cyan);
+}
+
+html.classic #leaderboard .score {
+  color: var(--color-cyan);
+}
+
+html.classic #btn-modal-close {
+  border-color: var(--color-cyan);
+  background: #0a1a0a;
+  color: var(--color-cyan);
+}
+
+html.classic #btn-modal-close:hover {
+  background: #003300;
+}
+
+html.classic #btn-leaderboard {
+  border-color: var(--color-cyan);
+  background: #0a1a0a;
+  color: var(--color-text);
+}
+
+html.classic #btn-leaderboard:hover {
+  background: #003300;
+}
+
+html.classic .overlay-actions button {
+  border-color: var(--color-cyan);
+  background: #0a1a0a;
+  color: var(--color-text);
+}
+
+html.classic .overlay-actions button:hover {
+  background: #003300;
 }

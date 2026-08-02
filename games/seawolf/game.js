@@ -84,6 +84,37 @@
   var keysLeft = false;
   var keysRight = false;
 
+  // Audio system
+  var audioCtx = null;
+  var audioEnabled = false;
+  var sonarPingInterval = null;
+  var sonarBaseRate = 2.5; // seconds between pings
+  var sonarMinRate = 0.4;
+
+  // Classic/vector mode
+  var classicMode = false;
+
+  // Wave system
+  var currentWave = 1;
+  var waveShipsRemaining = 0;
+  var waveComplete = false;
+  var interWaveDelay = 0;
+  var INTER_WAVE_FRAMES = 120; // 2 seconds at 60fps
+  var waveFormations = [
+    // Wave 1: 3 freighters
+    [SHIP_FREIGHTER, SHIP_FREIGHTER, SHIP_FREIGHTER],
+    // Wave 2: 2 freighters, 1 destroyer
+    [SHIP_FREIGHTER, SHIP_FREIGHTER, SHIP_DESTROYER],
+    // Wave 3: 1 freighter, 2 destroyers
+    [SHIP_FREIGHTER, SHIP_DESTROYER, SHIP_DESTROYER],
+    // Wave 4: 2 destroyers, 1 PT boat
+    [SHIP_DESTROYER, SHIP_DESTROYER, SHIP_PT],
+    // Wave 5: 1 destroyer, 2 PT boats
+    [SHIP_DESTROYER, SHIP_PT, SHIP_PT],
+    // Wave 6+: 3 PT boats, occasional command ship
+    [SHIP_PT, SHIP_PT, SHIP_PT],
+  ];
+
   var ships = [];
   var torpedoes = [];
   var depthCharges = [];
@@ -93,6 +124,7 @@
   var spawnTimer = 0;
   var spawnInterval = 90;
   var commandSpawnTimer = 0;
+  var commandShipSpawnedThisWave = false;
 
   var SHIP_DEFS = {};
   SHIP_DEFS[SHIP_FREIGHTER] = { speed: 0.55, score: 100, w: 78, h: 18, color: COL_SHIP };
@@ -139,6 +171,140 @@
     return arr[(Math.random() * arr.length) | 0];
   }
 
+  // Audio system
+  function ensureAudioContext() {
+    if (!audioCtx) {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) {
+        audioCtx = null;
+      }
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+    return audioCtx;
+  }
+
+  function playTone(freq, duration, type, volume, startTime) {
+    var ctx = ensureAudioContext();
+    if (!ctx) return;
+    var t = startTime !== undefined ? startTime : ctx.currentTime;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.value = freq;
+    gain.gain.value = volume || 0.1;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + (duration || 0.1));
+  }
+
+  function playSonarPing() {
+    var ctx = ensureAudioContext();
+    if (!ctx || !audioEnabled) return;
+    var t = ctx.currentTime;
+    // Ping: quick sweep down
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(800, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + 0.3);
+    gain.gain.setValueAtTime(0.15, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.5);
+  }
+
+  function playTorpedoLaunch() {
+    var ctx = ensureAudioContext();
+    if (!ctx || !audioEnabled) return;
+    var t = ctx.currentTime;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(60, t + 0.15);
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  }
+
+  function playExplosion(isDepthCharge) {
+    var ctx = ensureAudioContext();
+    if (!ctx || !audioEnabled) return;
+    var t = ctx.currentTime;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = isDepthCharge ? "sawtooth" : "triangle";
+    osc.frequency.setValueAtTime(isDepthCharge ? 120 : 200, t);
+    osc.frequency.exponentialRampToValueAtTime(40, t + (isDepthCharge ? 0.4 : 0.25));
+    gain.gain.setValueAtTime(0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + (isDepthCharge ? 0.5 : 0.3));
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + (isDepthCharge ? 0.5 : 0.3));
+  }
+
+  function playHullHit() {
+    var ctx = ensureAudioContext();
+    if (!ctx || !audioEnabled) return;
+    var t = ctx.currentTime;
+    // Alarm: alternating high/low
+    for (var i = 0; i < 3; i++) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = i % 2 === 0 ? 600 : 300;
+      gain.gain.setValueAtTime(0.15, t + i * 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.15 + 0.1);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t + i * 0.15);
+      osc.stop(t + i * 0.15 + 0.1);
+    }
+  }
+
+  function startSonarPingLoop() {
+    if (sonarPingInterval) {
+      clearInterval(sonarPingInterval);
+    }
+    if (!audioEnabled) return;
+    var ping = function () {
+      if (!audioEnabled || phase !== PHASE_PLAYING) return;
+      playSonarPing();
+      // Rate increases as time runs out
+      var timeRatio = patrolFramesLeft / (PATROL_SECONDS * 60);
+      var rate = sonarBaseRate - (sonarBaseRate - sonarMinRate) * (1 - timeRatio);
+      sonarPingInterval = setTimeout(ping, rate * 1000);
+    };
+    ping();
+  }
+
+  function stopSonarPingLoop() {
+    if (sonarPingInterval) {
+      clearTimeout(sonarPingInterval);
+      sonarPingInterval = null;
+    }
+  }
+
+  function toggleClassicMode() {
+    classicMode = !classicMode;
+    document.documentElement.classList.toggle("classic", classicMode);
+    var btn = document.getElementById("btn-classic-toggle");
+    if (btn) {
+      btn.textContent = classicMode ? "VECTOR" : "VECTOR";
+      btn.title = classicMode ? "Switch to Modern Mode" : "Switch to Classic Vector Mode";
+    }
+  }
+
   function resizeCanvas() {
     var displayW = window.innerWidth || canvas.clientWidth || WORLD;
     var displayH = window.innerHeight || canvas.clientHeight || WORLD;
@@ -156,7 +322,7 @@
     scaleY = canvas.height / WORLD;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = COL_SKY;
+    ctx.fillStyle = classicMode ? "#000800" : COL_SKY;
     ctx.fillRect(0, 0, displayW, displayH);
     ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
   }
@@ -196,21 +362,13 @@
   }
 
   function difficultyTier() {
-    var elapsed = PATROL_SECONDS * 60 - patrolFramesLeft;
-    return 1 + Math.floor(elapsed / (18 * 60));
+    // Tier increases with wave number
+    return Math.min(4, 1 + Math.floor((currentWave - 1) / 2));
   }
 
-  function shipTypesForTier(tier) {
-    if (tier <= 1) {
-      return [SHIP_FREIGHTER, SHIP_FREIGHTER, SHIP_DESTROYER];
-    }
-    if (tier === 2) {
-      return [SHIP_FREIGHTER, SHIP_DESTROYER, SHIP_DESTROYER, SHIP_PT];
-    }
-    if (tier === 3) {
-      return [SHIP_DESTROYER, SHIP_PT, SHIP_PT, SHIP_FREIGHTER];
-    }
-    return [SHIP_PT, SHIP_DESTROYER, SHIP_PT, SHIP_FREIGHTER, SHIP_DESTROYER];
+  function getWaveFormation(wave) {
+    var idx = Math.min(waveFormations.length - 1, wave - 1);
+    return waveFormations[idx];
   }
 
   function spawnShip(forcedType) {
@@ -235,6 +393,19 @@
     ships.push(ship);
   }
 
+  function shipTypesForTier(tier) {
+    if (tier <= 1) {
+      return [SHIP_FREIGHTER, SHIP_FREIGHTER, SHIP_DESTROYER];
+    }
+    if (tier === 2) {
+      return [SHIP_FREIGHTER, SHIP_DESTROYER, SHIP_DESTROYER, SHIP_PT];
+    }
+    if (tier === 3) {
+      return [SHIP_DESTROYER, SHIP_PT, SHIP_PT, SHIP_FREIGHTER];
+    }
+    return [SHIP_PT, SHIP_DESTROYER, SHIP_PT, SHIP_FREIGHTER, SHIP_DESTROYER];
+  }
+
   function fireTorpedo() {
     var i;
     for (i = 0; i < tubes.length; i++) {
@@ -245,9 +416,9 @@
           x: aimX,
           y: TORPEDO_START_Y,
           vy: -TORPEDO_SPEED,
-          trail: [],
           alive: true,
         });
+        playTorpedoLaunch();
         return true;
       }
     }
@@ -306,12 +477,16 @@
         if (s.dropTimer > 0) {
           s.dropTimer -= 1;
           if (s.dropTimer === 0 && s.x > 40 && s.x < W - 40) {
-            depthCharges.push({
-              x: s.x,
-              y: HORIZON_Y + 6,
-              vy: 1.35 + Math.random() * 0.4,
-              alive: true,
-            });
+            // Drop 3 depth charges in a spread pattern
+            var spread = [-35, 0, 35];
+            for (var si = 0; si < spread.length; si++) {
+              depthCharges.push({
+                x: s.x + spread[si],
+                y: HORIZON_Y + 6,
+                vy: 1.35 + Math.random() * 0.4,
+                alive: true,
+              });
+            }
             s.dropTimer = (160 + Math.random() * 200) | 0;
           }
         }
@@ -330,10 +505,6 @@
       if (!t.alive) {
         torpedoes.splice(i, 1);
       } else {
-        t.trail.push({ x: t.x, y: t.y });
-        if (t.trail.length > 14) {
-          t.trail.shift();
-        }
         t.y += t.vy;
         for (j = 0; j < ships.length; j++) {
           var ship = ships[j];
@@ -347,6 +518,7 @@
             }
             spawnExplosion(ship.x, ship.y - ship.h * 0.4, 34, COL_BLAST);
             spawnFloatScore(ship.x, ship.y - 24, ship.score);
+            playExplosion(false);
             break;
           }
         }
@@ -374,6 +546,8 @@
           if (dx * dx < 55 * 55) {
             hull -= 1;
             spawnExplosion(W * 0.5, SUB_Y - 10, 40, COL_DEPTH);
+            playExplosion(true);
+            playHullHit();
             d.alive = false;
             if (hull <= 0) {
               gameOver("hull");
@@ -381,6 +555,7 @@
             }
           } else {
             spawnExplosion(d.x, d.y, 16, COL_DEPTH);
+            playExplosion(true);
             d.alive = false;
           }
         }
@@ -416,20 +591,46 @@
   }
 
   function updateSpawning() {
-    var tier = difficultyTier();
-    spawnInterval = Math.max(38, 100 - tier * 10);
-    spawnTimer -= 1;
-    if (spawnTimer <= 0) {
-      spawnShip();
-      if (tier >= 3 && Math.random() < 0.28) {
-        spawnShip();
+    // Handle inter-wave delay
+    if (interWaveDelay > 0) {
+      interWaveDelay -= 1;
+      if (interWaveDelay <= 0) {
+        startNextWave();
       }
-      spawnTimer = spawnInterval + ((Math.random() * 20) | 0);
+      return;
     }
-    commandSpawnTimer -= 1;
-    if (commandSpawnTimer <= 0 && tier >= 2) {
+
+    // Check if current wave is complete
+    if (waveComplete) {
+      waveComplete = false;
+      interWaveDelay = INTER_WAVE_FRAMES;
+      // Bonus for completing wave
+      score += 500 * currentWave;
+      spawnFloatScore(W * 0.5, HORIZON_Y - 40, "WAVE BONUS +" + (500 * currentWave));
+      playExplosion(false);
+      return;
+    }
+
+    // Spawn ships from current wave formation
+    if (waveShipsRemaining > 0 && spawnTimer <= 0) {
+      var formation = getWaveFormation(currentWave);
+      var type = formation[formation.length - waveShipsRemaining];
+      spawnShip(type);
+      waveShipsRemaining -= 1;
+      spawnTimer = 60 + (Math.random() * 60) | 0; // 1-2 seconds between ships in wave
+    } else if (spawnTimer > 0) {
+      spawnTimer -= 1;
+    }
+
+    // Check if all ships in wave have been spawned and all are gone
+    if (waveShipsRemaining === 0 && ships.length === 0) {
+      waveComplete = true;
+    }
+
+    // Command ship: 1 per wave after wave 2, spawns at random time
+    if (currentWave >= 3 && !commandShipSpawnedThisWave && Math.random() < 0.001) {
       spawnShip(SHIP_COMMAND);
-      commandSpawnTimer = (420 - tier * 40) | 0;
+      commandShipSpawnedThisWave = true;
     }
   }
 
@@ -462,16 +663,21 @@
   }
 
   function drawBackground() {
-    ctx.fillStyle = COL_SKY;
+    var skyColor = classicMode ? "#000800" : COL_SKY;
+    var oceanTop = classicMode ? "#003300" : COL_OCEAN_TOP;
+    var oceanBot = classicMode ? "#001a00" : COL_OCEAN_BOT;
+    var horizonColor = classicMode ? "#00aa00" : COL_HORIZON;
+
+    ctx.fillStyle = skyColor;
     ctx.fillRect(0, 0, W, HORIZON_Y);
 
     var grad = ctx.createLinearGradient(0, HORIZON_Y, 0, H);
-    grad.addColorStop(0, COL_OCEAN_TOP);
-    grad.addColorStop(1, COL_OCEAN_BOT);
+    grad.addColorStop(0, oceanTop);
+    grad.addColorStop(1, oceanBot);
     ctx.fillStyle = grad;
     ctx.fillRect(0, HORIZON_Y, W, H - HORIZON_Y);
 
-    ctx.strokeStyle = COL_HORIZON;
+    ctx.strokeStyle = horizonColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, HORIZON_Y);
@@ -479,7 +685,7 @@
     ctx.stroke();
 
     // subtle wave ticks
-    ctx.strokeStyle = "rgba(60, 160, 200, 0.18)";
+    ctx.strokeStyle = classicMode ? "rgba(0, 170, 0, 0.12)" : "rgba(60, 160, 200, 0.18)";
     ctx.lineWidth = 1;
     var wy;
     for (wy = HORIZON_Y + 28; wy < H - 50; wy += 36) {
@@ -497,7 +703,7 @@
     }
 
     // tactical grid faint
-    ctx.strokeStyle = "rgba(40, 120, 180, 0.08)";
+    ctx.strokeStyle = classicMode ? "rgba(0, 100, 0, 0.06)" : "rgba(40, 120, 180, 0.08)";
     var gx;
     for (gx = 0; gx <= W; gx += 40) {
       ctx.beginPath();
@@ -511,9 +717,20 @@
     var x = s.x;
     var y = s.y;
     var hw = s.w * 0.5;
-    ctx.strokeStyle = s.color;
-    ctx.fillStyle = "rgba(10, 30, 50, 0.55)";
-    ctx.lineWidth = 1.5;
+    var shipColor = s.color;
+    var fillColor = classicMode ? "rgba(0, 20, 0, 0.5)" : "rgba(10, 30, 50, 0.55)";
+    var strokeStyle = classicMode ? "#00ff00" : shipColor;
+    
+    if (classicMode) {
+      strokeStyle = "#00ff00";
+      if (s.type === SHIP_COMMAND) {
+        strokeStyle = "#ffff00";
+      }
+    }
+    
+    ctx.strokeStyle = strokeStyle;
+    ctx.fillStyle = fillColor;
+    ctx.lineWidth = classicMode ? 1 : 1.5;
     ctx.beginPath();
     if (s.type === SHIP_FREIGHTER) {
       ctx.moveTo(x - hw, y);
@@ -560,26 +777,28 @@
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = COL_SHIP_CMD;
+      ctx.fillStyle = classicMode ? "#ffff00" : COL_SHIP_CMD;
       ctx.fillRect(x - 2, y - s.h - 6, 4, 4);
     }
   }
 
   function drawTorpedo(t) {
-    var i;
-    for (i = 0; i < t.trail.length; i++) {
-      var p = t.trail[i];
-      var a = (i + 1) / (t.trail.length + 1);
-      ctx.strokeStyle = "rgba(124, 245, 255," + (a * 0.55).toFixed(2) + ")";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x, p.y + 6);
-      ctx.stroke();
-    }
-    ctx.strokeStyle = COL_TORP;
-    ctx.fillStyle = COL_TORP;
-    ctx.lineWidth = 1.5;
+    var torpColor = classicMode ? "#00ff88" : COL_TORP;
+    var trailColor = classicMode ? "rgba(0, 255, 136, 0.4)" : "rgba(124, 245, 255, 0.55)";
+    
+    // Draw dashed wake line from tube to torpedo
+    ctx.strokeStyle = trailColor;
+    ctx.lineWidth = classicMode ? 1 : 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(t.x, TORPEDO_START_Y);
+    ctx.lineTo(t.x, t.y + 10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = torpColor;
+    ctx.fillStyle = torpColor;
+    ctx.lineWidth = classicMode ? 1 : 1.5;
     ctx.beginPath();
     ctx.moveTo(t.x, t.y - 10);
     ctx.lineTo(t.x - 3, t.y + 4);
@@ -590,8 +809,9 @@
   }
 
   function drawDepthCharge(d) {
-    ctx.strokeStyle = COL_DEPTH;
-    ctx.lineWidth = 1.5;
+    var dcColor = classicMode ? "#ff4400" : COL_DEPTH;
+    ctx.strokeStyle = dcColor;
+    ctx.lineWidth = classicMode ? 1 : 1.5;
     ctx.beginPath();
     ctx.arc(d.x, d.y, 5, 0, Math.PI * 2);
     ctx.stroke();
@@ -599,11 +819,29 @@
     ctx.moveTo(d.x, d.y - 8);
     ctx.lineTo(d.x, d.y + 8);
     ctx.stroke();
+    
+    // Danger zone indicator (expanding ring)
+    if (d.y > HORIZON_Y + 20) {
+      var dangerRadius = 55 * (1 - (SUB_Y - 8 - d.y) / (SUB_Y - 8 - HORIZON_Y - 20));
+      if (dangerRadius > 0 && dangerRadius < 55) {
+        ctx.strokeStyle = classicMode ? "rgba(255, 68, 0, 0.4)" : "rgba(255, 68, 100, 0.3)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(W * 0.5, SUB_Y - 10, dangerRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
   }
 
   function drawExplosion(e) {
-    ctx.strokeStyle = e.color;
-    ctx.lineWidth = 2;
+    var expColor = e.color;
+    if (classicMode) {
+      expColor = e.color === COL_DEPTH ? "#ff4400" : "#ff8800";
+    }
+    ctx.strokeStyle = expColor;
+    ctx.lineWidth = classicMode ? 1.5 : 2;
     ctx.beginPath();
     ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
     ctx.stroke();
@@ -613,8 +851,14 @@
   }
 
   function drawFloatScore(f) {
-    ctx.fillStyle = "rgba(255, 210, 124," + (f.life / 48).toFixed(2) + ")";
-    ctx.font = "12px Segoe UI, Tahoma, sans-serif";
+    var fsColor = classicMode ? "#ffff00" : "#ffd27c";
+    ctx.fillStyle = fsColor.replace(")", "," + (f.life / 48).toFixed(2) + ")").replace("rgb", "rgba");
+    if (classicMode) {
+      ctx.fillStyle = "rgba(255, 255, 0," + (f.life / 48).toFixed(2) + ")";
+    } else {
+      ctx.fillStyle = "rgba(255, 210, 124," + (f.life / 48).toFixed(2) + ")";
+    }
+    ctx.font = "12px " + (classicMode ? "VT323" : "Segoe UI, Tahoma, sans-serif");
     ctx.textAlign = "center";
     ctx.fillText(f.text, f.x, f.y);
   }
@@ -622,14 +866,43 @@
   function drawCrosshair() {
     var x = aimX;
     var y = HORIZON_Y - 36;
-    ctx.strokeStyle = COL_CYAN;
-    ctx.lineWidth = 1.5;
+    var crosshairColor = classicMode ? "#00ff00" : COL_CYAN;
+    var crosshairDim = classicMode ? "rgba(0, 255, 0, 0.25)" : COL_CYAN_DIM;
+
+    ctx.strokeStyle = crosshairColor;
+    ctx.lineWidth = classicMode ? 1 : 1.5;
     ctx.beginPath();
     ctx.arc(x, y, 16, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
     ctx.arc(x, y, 6, 0, Math.PI * 2);
     ctx.stroke();
+
+    // Stadia marks for lead estimation (at 10°, 20°, 30° angles)
+    var stadiaAngles = [-0.52, -0.35, -0.17, 0.17, 0.35, 0.52]; // radians
+    var stadiaRadius = 16;
+    ctx.lineWidth = 1;
+    for (var i = 0; i < stadiaAngles.length; i++) {
+      var ang = stadiaAngles[i];
+      var sx = x + Math.cos(ang) * stadiaRadius;
+      var sy = y + Math.sin(ang) * stadiaRadius;
+      var ex = x + Math.cos(ang) * (stadiaRadius + 6);
+      var ey = y + Math.sin(ang) * (stadiaRadius + 6);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+
+    // Range tick marks on horizontal axis
+    for (var tx = -26; tx <= 26; tx += 13) {
+      if (tx === 0) continue;
+      ctx.beginPath();
+      ctx.moveTo(x + tx, y - 3);
+      ctx.lineTo(x + tx, y + 3);
+      ctx.stroke();
+    }
+
     ctx.beginPath();
     ctx.moveTo(x - 26, y);
     ctx.lineTo(x - 10, y);
@@ -642,7 +915,7 @@
     ctx.stroke();
 
     // aim line down into water
-    ctx.strokeStyle = COL_CYAN_DIM;
+    ctx.strokeStyle = crosshairDim;
     ctx.setLineDash([4, 6]);
     ctx.beginPath();
     ctx.moveTo(x, y + 28);
@@ -654,9 +927,11 @@
   function drawSubSilhouette() {
     var cx = W * 0.5;
     var y = SUB_Y;
-    ctx.strokeStyle = COL_CYAN;
-    ctx.fillStyle = "rgba(0, 40, 60, 0.7)";
-    ctx.lineWidth = 1.5;
+    var subColor = classicMode ? "#00ff00" : COL_CYAN;
+    var subFill = classicMode ? "rgba(0, 30, 0, 0.7)" : "rgba(0, 40, 60, 0.7)";
+    ctx.strokeStyle = subColor;
+    ctx.fillStyle = subFill;
+    ctx.lineWidth = classicMode ? 1 : 1.5;
     ctx.beginPath();
     ctx.moveTo(cx - 40, y);
     ctx.quadraticCurveTo(cx, y + 18, cx + 40, y);
@@ -673,20 +948,27 @@
     var i;
     var baseX = W - 28;
     var baseY = 28;
-    ctx.strokeStyle = COL_HUD;
-    ctx.fillStyle = COL_HUD;
-    ctx.font = "11px Segoe UI, Tahoma, sans-serif";
+    var hudColor = classicMode ? "#00ff00" : COL_HUD;
+    var torpColor = classicMode ? "#00ff88" : COL_TORP;
+    var dimColor = classicMode ? "rgba(0, 100, 0, 0.5)" : "rgba(100, 140, 160, 0.55)";
+    var fillReady = classicMode ? "rgba(0, 255, 136, 0.25)" : "rgba(124, 245, 255, 0.35)";
+    var fillReload = classicMode ? "rgba(0, 30, 0, 0.5)" : "rgba(20, 40, 50, 0.5)";
+    var reloadBarColor = classicMode ? "rgba(0, 255, 0, 0.5)" : "rgba(0, 232, 255, 0.55)";
+    
+    ctx.strokeStyle = hudColor;
+    ctx.fillStyle = hudColor;
+    ctx.font = "11px " + (classicMode ? "VT323" : "Segoe UI, Tahoma, sans-serif");
     ctx.textAlign = "right";
     ctx.fillText("TUBES", baseX + 8, baseY - 10);
     for (i = 0; i < tubes.length; i++) {
       var tx = baseX - i * 18;
       var ty = baseY;
       if (tubes[i].ready) {
-        ctx.strokeStyle = COL_TORP;
-        ctx.fillStyle = "rgba(124, 245, 255, 0.35)";
+        ctx.strokeStyle = torpColor;
+        ctx.fillStyle = fillReady;
       } else {
-        ctx.strokeStyle = "rgba(100, 140, 160, 0.55)";
-        ctx.fillStyle = "rgba(20, 40, 50, 0.5)";
+        ctx.strokeStyle = dimColor;
+        ctx.fillStyle = fillReload;
       }
       ctx.beginPath();
       ctx.moveTo(tx, ty - 10);
@@ -697,17 +979,16 @@
       ctx.stroke();
       if (!tubes[i].ready) {
         var pct = 1 - tubes[i].reload / RELOAD_FRAMES;
-        ctx.fillStyle = "rgba(0, 232, 255, 0.55)";
+        ctx.fillStyle = reloadBarColor;
         ctx.fillRect(tx - 5, ty + 10, 10 * pct, 3);
       }
     }
   }
 
   function drawCornerHud() {
-    ctx.fillStyle = COL_HUD;
-    ctx.font = "13px Segoe UI, Tahoma, sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText("SCORE  " + score, 14, 24);
+    var hudColor = classicMode ? "#00ff00" : COL_HUD;
+    ctx.fillStyle = hudColor;
+    ctx.font = "13px " + (classicMode ? "VT323" : "Segoe UI, Tahoma, sans-serif");
     ctx.textAlign = "left";
     ctx.fillText("SUNK  " + shipsSunk, 14, H - 18);
     ctx.textAlign = "right";
@@ -721,7 +1002,7 @@
     ctx.textAlign = "left";
     ctx.fillText("HULL", 14, 46);
     for (hi = 0; hi < MAX_HULL; hi++) {
-      ctx.strokeStyle = hi < hull ? COL_CYAN : "rgba(80, 100, 120, 0.45)";
+      ctx.strokeStyle = hi < hull ? (classicMode ? "#00ff00" : COL_CYAN) : (classicMode ? "rgba(80, 100, 80, 0.4)" : "rgba(80, 100, 120, 0.45)");
       ctx.beginPath();
       ctx.arc(62 + hi * 16, 42, 5, 0, Math.PI * 2);
       ctx.stroke();
@@ -772,6 +1053,12 @@
       secs +
       "s   HULL " +
       hull;
+    
+    // Update top-center score display
+    var scoreEl = document.getElementById("score-display");
+    if (scoreEl) {
+      scoreEl.textContent = "SCORE " + score;
+    }
   }
 
   function clearWorld() {
@@ -780,9 +1067,15 @@
     depthCharges = [];
     explosions = [];
     floatScores = [];
+    currentWave = 1;
+    waveShipsRemaining = 0;
+    waveComplete = false;
+    interWaveDelay = 0;
+    commandShipSpawnedThisWave = false;
   }
 
   function showMenuOverlay() {
+    stopSonarPingLoop();
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "SEA WOLF";
     if (SLArcade.isHudMode()) {
@@ -805,6 +1098,7 @@
   }
 
   function beginReadyCountdown(titleText, hintText) {
+    stopSonarPingLoop();
     phase = PHASE_READY;
     running = false;
     readyTimer = READY_FRAMES;
@@ -926,6 +1220,7 @@
     if (phase === PHASE_OVER) {
       return;
     }
+    stopSonarPingLoop();
     phase = PHASE_OVER;
     running = false;
     setPlayingPointer(false);
@@ -957,6 +1252,7 @@
 
     function returnToStartScreen(hint) {
       clearTimeout(recoveryTimer);
+      stopSonarPingLoop();
       phase = PHASE_MENU;
       running = false;
       clearWorld();
@@ -1002,13 +1298,34 @@
     aimX = W * 0.5;
     hull = MAX_HULL;
     patrolFramesLeft = PATROL_SECONDS * 60;
-    spawnTimer = 40;
-    commandSpawnTimer = 280;
-    spawnInterval = 90;
+    currentWave = 1;
+    waveShipsRemaining = getWaveFormation(1).length;
+    waveComplete = false;
+    interWaveDelay = 0;
+    commandShipSpawnedThisWave = false;
+    spawnTimer = 30; // First ship spawns quickly
     updateHud();
     beginReadyCountdown(
-      "PATROL " + wave,
+      "PATROL " + currentWave,
       "Freighters 100 · Destroyers 250 · PT boats 500 · Command boat 1000. Lead your shots."
+    );
+    
+    // Enable audio on first user interaction
+    if (!audioEnabled) {
+      audioEnabled = true;
+      ensureAudioContext();
+    }
+  }
+
+  function startNextWave() {
+    currentWave += 1;
+    waveShipsRemaining = getWaveFormation(currentWave).length;
+    commandShipSpawnedThisWave = false;
+    spawnTimer = 30;
+    updateHud();
+    beginReadyCountdown(
+      "PATROL " + currentWave,
+      "Wave " + currentWave + " incoming!"
     );
   }
 
@@ -1030,6 +1347,7 @@
     if (phase === PHASE_MENU || phase === PHASE_OVER) {
       return;
     }
+    stopSonarPingLoop();
     phase = PHASE_MENU;
     running = false;
     clearWorld();
@@ -1097,6 +1415,7 @@
         setPlayingPointer(true);
         setQuitVisible(true);
         grabMediaFocus();
+        startSonarPingLoop();
       }
     } else if (phase === PHASE_PLAYING && running) {
       updatePlaying();
@@ -1160,11 +1479,21 @@
     e.preventDefault();
     openLeaderboardModal();
   });
-  btnModalClose.addEventListener("click", closeLeaderboardModal);
+btnModalClose.addEventListener("click", closeLeaderboardModal);
   btnModalClose.addEventListener("touchend", function (e) {
     e.preventDefault();
     closeLeaderboardModal();
   });
+  
+  var btnClassicToggle = document.getElementById("btn-classic-toggle");
+  if (btnClassicToggle) {
+    btnClassicToggle.addEventListener("click", toggleClassicMode);
+    btnClassicToggle.addEventListener("touchend", function (e) {
+      e.preventDefault();
+      toggleClassicMode();
+    });
+  }
+
   leaderboardModal.addEventListener("click", function (e) {
     if (e.target === leaderboardModal) {
       closeLeaderboardModal();
