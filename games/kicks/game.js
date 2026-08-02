@@ -703,25 +703,19 @@
     setQuitVisible(true);
   }
 
-  function revealFullImage() {
-    var i;
-    for (i = 0; i < field.length; i++) {
-      field[i] = CLAIMED;
-    }
+  function showLevelClear(overPct, splitBonus, shownFill) {
+    // Cheap path: stop sim + raise cached DOM image. No field rewrite / no canvas art.
+    phase = PHASE_LEVEL;
+    running = false;
     drawing = false;
     stix = [];
     fuseOn = false;
     sparx = [];
-    fillPct = 100;
-  }
-
-  function showLevelClear(overPct, splitBonus) {
-    var shownFill = fillPct;
-    phase = PHASE_LEVEL;
-    running = false;
     setTouchPadVisible(false);
-    revealFullImage();
     setRevealFront(true);
+    if (shownFill === undefined || shownFill === null) {
+      shownFill = fillPct;
+    }
     overlay.classList.remove("hidden");
     overlay.classList.add("level-clear");
     overlayTitle.textContent = splitBonus ? "QIX SPLIT!" : "LEVEL CLEAR";
@@ -744,6 +738,23 @@
     setStartScreenExtras(false);
     setQuitVisible(true);
     updateHud();
+  }
+
+  function finishLevel(overPct, splitBonus) {
+    var shownFill = fillPct;
+    // Raise image immediately so the frame never paints a near-full board
+    phase = PHASE_LEVEL;
+    running = false;
+    drawing = false;
+    stix = [];
+    fuseOn = false;
+    sparx = [];
+    setRevealFront(true);
+    setTouchPadVisible(false);
+    // Defer DOM overlay work off the claim stack (CEF-friendly)
+    setTimeout(function () {
+      showLevelClear(overPct, splitBonus, shownFill);
+    }, 0);
   }
 
   function cellCenter(x, y) {
@@ -885,75 +896,90 @@
 
   function completeClaim() {
     var i;
-    // Convert DRAWING to temporary wall for flood
+    var x;
+    var y;
+    // Convert DRAWING stix into walls
     for (i = 0; i < stix.length; i++) {
       var s = stix[i];
       if (field[idx(s.x, s.y)] === DRAWING) {
         field[idx(s.x, s.y)] = CLAIMED;
       }
     }
-
-    // Find open regions
-    var regions = [];
-    var visited = {};
-    var x;
-    var y;
-    for (y = 1; y < ROWS - 1; y++) {
-      for (x = 1; x < COLS - 1; x++) {
-        if (field[idx(x, y)] !== EMPTY) {
-          continue;
-        }
-        var key = x + "," + y;
-        if (visited[key]) {
-          continue;
-        }
-        var cells = [];
-        floodRegion(x, y, cells, visited);
-        if (cells.length) {
-          regions.push(cells);
-        }
-      }
-    }
-
-    // Map open cells → region index (avoids O(regions×cells) scans that hitch on big fills)
-    var cellRegion = {};
-    for (i = 0; i < regions.length; i++) {
-      var cellsR = regions[i];
-      var j;
-      for (j = 0; j < cellsR.length; j++) {
-        cellRegion[cellsR[j].x + "," + cellsR[j].y] = i;
-      }
-    }
-    var qixRegions = {};
-    for (i = 0; i < qixes.length; i++) {
-      var qc = qixCell(qixes[i]);
-      var rq = cellRegion[qc.x + "," + qc.y];
-      if (rq !== undefined) {
-        qixRegions[rq] = true;
-      }
-    }
-
-    var claimedCells = 0;
-    for (i = 0; i < regions.length; i++) {
-      if (qixRegions[i]) {
-        continue;
-      }
-      var c;
-      for (c = 0; c < regions[i].length; c++) {
-        field[idx(regions[i][c].x, regions[i][c].y)] = CLAIMED;
-        claimedCells++;
-      }
-    }
-
-    // Clear any leftover DRAWING
     for (i = 0; i < field.length; i++) {
       if (field[i] === DRAWING) {
         field[i] = EMPTY;
       }
     }
 
-    var pctGain =
-      Math.floor((claimedCells / ((COLS - 2) * (ROWS - 2))) * 1000) / 10;
+    // Region flood with a flat id buffer — no giant {x,y} / string-key maps (those freeze CEF)
+    var ids = [];
+    for (i = 0; i < field.length; i++) {
+      ids[i] = 0;
+    }
+    var nextId = 1;
+    var stack = [];
+    var si;
+    for (y = 1; y < ROWS - 1; y++) {
+      for (x = 1; x < COLS - 1; x++) {
+        i = idx(x, y);
+        if (field[i] !== EMPTY || ids[i] !== 0) {
+          continue;
+        }
+        var rid = nextId;
+        nextId++;
+        if (nextId > 32000) {
+          nextId = 1;
+        }
+        stack.length = 0;
+        stack.push(i);
+        while (stack.length) {
+          si = stack.pop();
+          if (ids[si] !== 0 || field[si] !== EMPTY) {
+            continue;
+          }
+          ids[si] = rid;
+          var sx = si % COLS;
+          var sy = (si / COLS) | 0;
+          if (sx + 1 < COLS) {
+            stack.push(si + 1);
+          }
+          if (sx > 0) {
+            stack.push(si - 1);
+          }
+          if (sy + 1 < ROWS) {
+            stack.push(si + COLS);
+          }
+          if (sy > 0) {
+            stack.push(si - COLS);
+          }
+        }
+      }
+    }
+
+    var qixIds = {};
+    var qixIdCount = 0;
+    for (i = 0; i < qixes.length; i++) {
+      var qc = qixCell(qixes[i]);
+      if (!inBounds(qc.x, qc.y)) {
+        continue;
+      }
+      var qid = ids[idx(qc.x, qc.y)];
+      if (qid !== 0 && !qixIds[qid]) {
+        qixIds[qid] = true;
+        qixIdCount++;
+      }
+    }
+
+    var claimedCells = 0;
+    for (i = 0; i < field.length; i++) {
+      if (ids[i] !== 0 && !qixIds[ids[i]]) {
+        field[i] = CLAIMED;
+        claimedCells++;
+      }
+    }
+
+    var playable = (COLS - 2) * (ROWS - 2);
+    var pctGain = Math.floor((claimedCells / playable) * 1000) / 10;
     var base = stixAllSlow ? 200 : 100;
     var pts = Math.floor(base * pctGain * scoreMult);
     score += pts;
@@ -975,7 +1001,6 @@
     fuseOn = false;
     fuseIdle = 0;
     fillPct = calcFillPct();
-    // Stay on a real edge after the fill, not inside the image
     if (!isWalkable(px, py)) {
       var edge = pickRespawnCell();
       px = edge.x;
@@ -984,25 +1009,14 @@
     updateHud();
 
     // Dual Qix split?
-    if (qixes.length >= 2 && regions.length >= 2) {
-      var occupied = 0;
-      for (i = 0; i < regions.length; i++) {
-        if (qixRegions[i]) {
-          occupied++;
-        }
+    if (qixes.length >= 2 && qixIdCount >= 2) {
+      if (scoreMult < 9) {
+        scoreMult++;
       }
-      if (occupied >= 2) {
-        if (scoreMult < 9) {
-          scoreMult++;
-        }
-        banner = "QIX SPLIT — MULTIPLIER ×" + scoreMult;
-        bannerT = 120;
-        // Switch phase first so the next paint uses the cheap full-image path
-        phase = PHASE_LEVEL;
-        running = false;
-        showLevelClear(0, true);
-        return;
-      }
+      banner = "QIX SPLIT — MULTIPLIER ×" + scoreMult;
+      bannerT = 120;
+      finishLevel(0, true);
+      return;
     }
 
     if (fillPct >= targetPct) {
@@ -1018,28 +1032,7 @@
         highScore = score;
       }
       checkLifeBonus();
-      phase = PHASE_LEVEL;
-      running = false;
-      showLevelClear(over, false);
-    }
-  }
-
-  function floodRegion(sx, sy, out, visited) {
-    var stack = [[sx, sy]];
-    while (stack.length) {
-      var p = stack.pop();
-      var x = p[0];
-      var y = p[1];
-      var k = x + "," + y;
-      if (visited[k]) {
-        continue;
-      }
-      if (!inBounds(x, y) || field[idx(x, y)] !== EMPTY) {
-        continue;
-      }
-      visited[k] = 1;
-      out.push({ x: x, y: y });
-      stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+      finishLevel(over, false);
     }
   }
 
@@ -1365,21 +1358,25 @@
       }
     }
 
-    // Bright edge only on shoreline (claimed next to open)
+    // Shoreline from OPEN cells only (cheap when board is mostly claimed)
     ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
     ctx.lineWidth = 1.25;
     for (y = 0; y < ROWS; y++) {
       for (x = 0; x < COLS; x++) {
-        if (field[idx(x, y)] !== CLAIMED) {
+        if (field[idx(x, y)] !== EMPTY && field[idx(x, y)] !== DRAWING) {
           continue;
         }
-        if (
-          isOpen(x + 1, y) ||
-          isOpen(x - 1, y) ||
-          isOpen(x, y + 1) ||
-          isOpen(x, y - 1)
-        ) {
-          ctx.strokeRect(x * CELL + 0.5, y * CELL + 0.5, CELL - 1, CELL - 1);
+        if (isClaimed(x + 1, y)) {
+          ctx.strokeRect((x + 1) * CELL + 0.5, y * CELL + 0.5, CELL - 1, CELL - 1);
+        }
+        if (isClaimed(x - 1, y)) {
+          ctx.strokeRect((x - 1) * CELL + 0.5, y * CELL + 0.5, CELL - 1, CELL - 1);
+        }
+        if (isClaimed(x, y + 1)) {
+          ctx.strokeRect(x * CELL + 0.5, (y + 1) * CELL + 0.5, CELL - 1, CELL - 1);
+        }
+        if (isClaimed(x, y - 1)) {
+          ctx.strokeRect(x * CELL + 0.5, (y - 1) * CELL + 0.5, CELL - 1, CELL - 1);
         }
       }
     }
