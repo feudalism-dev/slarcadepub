@@ -182,6 +182,97 @@
     );
   }
 
+  // Picsum can't filter by keyword — pure seed URLs feel random/lame.
+  // These ID packs stay on picsum.photos (no hosting) but bias toward dramatic stills.
+  var PICSUM_THEMES = {
+    space: [1015, 1016, 1018, 1019, 1025, 1036, 1043, 1080, 1084, 365, 367, 380],
+    city: [1015, 1039, 1050, 1069, 1074, 174, 183, 201, 232, 239, 292, 314],
+    nature: [1018, 1019, 1036, 1043, 110, 129, 133, 142, 147, 160, 164, 338],
+    ocean: [1015, 1016, 1036, 1080, 244, 274, 348, 365, 431, 433, 449, 451],
+    night: [1016, 1039, 1050, 1069, 174, 183, 232, 239, 292, 380, 392, 431],
+    abstract: [1025, 1039, 1074, 1084, 201, 299, 314, 367, 380, 392, 449, 451],
+  };
+  var PICSUM_SCENIC = [
+    1015, 1016, 1018, 1019, 1025, 1036, 1039, 1043, 1050, 1069, 1074, 1080, 1084,
+    110, 129, 133, 142, 147, 160, 164, 174, 183, 201, 232, 239, 244, 274, 292,
+    299, 314, 338, 348, 365, 367, 380, 392, 431, 433, 449, 451,
+  ];
+
+  function categoryTagsList() {
+    return String(imgCfg.category || "")
+      .split(",")
+      .map(function (s) {
+        return s.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      })
+      .filter(Boolean);
+  }
+
+  function picsumPoolForCategory() {
+    var tags = categoryTagsList();
+    var pool = [];
+    var seen = {};
+    var i;
+    var t;
+    var themeKey;
+    var alias = {
+      nebula: "space",
+      galaxy: "space",
+      cosmos: "space",
+      cyberpunk: "city",
+      neon: "city",
+      urban: "city",
+      skyline: "city",
+      forest: "nature",
+      mountain: "nature",
+      landscape: "nature",
+      desert: "nature",
+      sea: "ocean",
+      beach: "ocean",
+      water: "ocean",
+      arcade: "abstract",
+    };
+    function addTheme(name) {
+      var ids = PICSUM_THEMES[name];
+      var j;
+      if (!ids) {
+        return;
+      }
+      for (j = 0; j < ids.length; j++) {
+        if (!seen[ids[j]]) {
+          seen[ids[j]] = 1;
+          pool.push(ids[j]);
+        }
+      }
+    }
+    for (i = 0; i < tags.length; i++) {
+      t = tags[i];
+      themeKey = PICSUM_THEMES[t] ? t : alias[t];
+      if (themeKey) {
+        addTheme(themeKey);
+      }
+    }
+    if (!pool.length) {
+      return PICSUM_SCENIC.slice();
+    }
+    return pool;
+  }
+
+  function hashSeed(s) {
+    var h = 0;
+    var i;
+    var str = String(s || "0");
+    for (i = 0; i < str.length; i++) {
+      h = (h * 31 + str.charCodeAt(i)) | 0;
+    }
+    return Math.abs(h);
+  }
+
+  function resolvePicsumUrl() {
+    var pool = picsumPoolForCategory();
+    var id = pool[hashSeed(imgCfg.seed) % pool.length];
+    return "https://picsum.photos/id/" + id + "/600/600";
+  }
+
   function maturityRank(m) {
     if (m === "adult") {
       return 2;
@@ -237,13 +328,9 @@
     var seed = String(imgCfg.seed || "1");
     var salt = categoryTagPath().replace(/,/g, "-") || "arcade";
 
-    // picsum (recommended): seed path is reliably unique per level
+    // picsum: pick from scenic ID packs (CATEGORY picks a vibe). No file hosting.
     if (imgCfg.provider === "picsum") {
-      return (
-        "https://picsum.photos/seed/" +
-        encodeURIComponent("kicks-" + salt + "-" + seed) +
-        "/600/600"
-      );
+      return resolvePicsumUrl();
     }
 
     // loremflickr: multi-tag+lock often returns the SAME photo (verified).
@@ -270,12 +357,8 @@
       return null;
     }
 
-    // Default / unknown → picsum (unique per seed)
-    return (
-      "https://picsum.photos/seed/" +
-      encodeURIComponent("kicks-" + salt + "-" + seed) +
-      "/600/600"
-    );
+    // Default / unknown → scenic picsum packs
+    return resolvePicsumUrl();
   }
 
   function setRevealFront(on) {
