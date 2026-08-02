@@ -718,8 +718,9 @@
     var y = s.y;
     var hw = s.w * 0.5;
     var shipColor = s.color;
-    var fillColor = classicMode ? "rgba(0, 20, 0, 0.5)" : "rgba(10, 30, 50, 0.55)";
+    var fillColor = classicMode ? "rgba(0, 20, 0, 0.3)" : "rgba(10, 30, 50, 0.4)";
     var strokeStyle = classicMode ? "#00ff00" : shipColor;
+    var lw = classicMode ? 1 : 1.5;
     
     if (classicMode) {
       strokeStyle = "#00ff00";
@@ -730,55 +731,315 @@
     
     ctx.strokeStyle = strokeStyle;
     ctx.fillStyle = fillColor;
-    ctx.lineWidth = classicMode ? 1 : 1.5;
+    ctx.lineWidth = lw;
+    
+    var dir = s.vx > 0 ? 1 : -1; // 1 = moving right, -1 = moving left
+    var bowX = x + dir * hw;
+    var sternX = x - dir * hw;
+    var deckY = y - s.h;
+    var keelY = y;
+    
     ctx.beginPath();
     if (s.type === SHIP_FREIGHTER) {
-      ctx.moveTo(x - hw, y);
-      ctx.lineTo(x - hw + 8, y - s.h);
-      ctx.lineTo(x + hw - 10, y - s.h);
-      ctx.lineTo(x + hw, y);
+      // Freighter: boxy hull, raked bow, flat stern, multiple hatches, bridge aft, funnel, mast
+      // Hull
+      ctx.moveTo(sternX, keelY);
+      ctx.lineTo(sternX + dir * 8, deckY);
+      ctx.lineTo(bowX - dir * 10, deckY);
+      ctx.lineTo(bowX, keelY);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+      
+      // Cargo hatches (3 rectangles on deck)
+      var hatchW = s.w * 0.22;
+      var hatchH = s.h * 0.6;
+      for (var hi = 0; hi < 3; hi++) {
+        var hx = sternX + dir * (14 + hi * (hatchW + 6));
+        ctx.beginPath();
+        ctx.rect(hx - dir * hatchW * 0.5, deckY - hatchH, hatchW, hatchH);
+        ctx.stroke();
+      }
+      
+      // Bridge superstructure (aft)
+      var bridgeX = sternX + dir * 8;
       ctx.beginPath();
-      ctx.rect(x - 10, y - s.h - 10, 14, 10);
+      ctx.moveTo(bridgeX - dir * 6, deckY);
+      ctx.lineTo(bridgeX - dir * 6, deckY - 14);
+      ctx.lineTo(bridgeX + dir * 10, deckY - 14);
+      ctx.lineTo(bridgeX + dir * 10, deckY - 6);
+      ctx.lineTo(bridgeX + dir * 4, deckY - 6);
+      ctx.lineTo(bridgeX + dir * 4, deckY);
+      ctx.closePath();
+      ctx.fill();
       ctx.stroke();
+      
+      // Bridge windows
       ctx.beginPath();
-      ctx.moveTo(x + 6, y - s.h - 10);
-      ctx.lineTo(x + 6, y - s.h - 22);
+      ctx.moveTo(bridgeX - dir * 4, deckY - 12);
+      ctx.lineTo(bridgeX + dir * 8, deckY - 12);
       ctx.stroke();
+      
+      // Funnel (smokestack) - aft of bridge
+      var funnelX = bridgeX + dir * 14;
+      ctx.beginPath();
+      ctx.moveTo(funnelX - dir * 4, deckY - 6);
+      ctx.lineTo(funnelX - dir * 4, deckY - 22);
+      ctx.lineTo(funnelX + dir * 6, deckY - 20);
+      ctx.lineTo(funnelX + dir * 6, deckY - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Mast (forward)
+      var mastX = bowX - dir * 18;
+      ctx.beginPath();
+      ctx.moveTo(mastX, deckY);
+      ctx.lineTo(mastX, deckY - 28);
+      ctx.stroke();
+      // Mast crossbar
+      ctx.beginPath();
+      ctx.moveTo(mastX - 8, deckY - 22);
+      ctx.lineTo(mastX + 8, deckY - 22);
+      ctx.stroke();
+      
     } else if (s.type === SHIP_DESTROYER) {
-      ctx.moveTo(x - hw, y);
-      ctx.lineTo(x - hw + 14, y - s.h);
-      ctx.lineTo(x + hw - 6, y - s.h * 0.85);
-      ctx.lineTo(x + hw, y);
+      // Destroyer: sleek flared bow, raised forecastle, bridge, funnel, aft gun, mast
+      // Hull with flared bow
+      ctx.moveTo(sternX, keelY);
+      ctx.lineTo(sternX + dir * 6, deckY + 4);
+      ctx.lineTo(sternX + dir * 18, deckY);
+      ctx.lineTo(bowX - dir * 4, deckY - 4);
+      ctx.lineTo(bowX, keelY - 2);
+      ctx.lineTo(bowX - dir * 2, keelY);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
+      
+      // Forecastle (raised forward deck)
+      ctx.beginPath();
+      ctx.moveTo(bowX - dir * 20, deckY);
+      ctx.lineTo(bowX - dir * 4, deckY - 4);
+      ctx.lineTo(bowX - dir * 4, deckY - 10);
+      ctx.lineTo(bowX - dir * 20, deckY - 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Forward gun turret
+      var gunX = bowX - dir * 12;
+      ctx.beginPath();
+      ctx.arc(gunX, deckY - 10, 6, 0, Math.PI * 2);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(x - 6, y - s.h);
-      ctx.lineTo(x - 6, y - s.h - 16);
-      ctx.lineTo(x + 10, y - s.h - 8);
+      ctx.moveTo(gunX, deckY - 10);
+      ctx.lineTo(gunX + dir * 14, deckY - 18);
       ctx.stroke();
+      
+      // Bridge
+      var bridgeX = bowX - dir * 30;
+      ctx.beginPath();
+      ctx.moveTo(bridgeX - dir * 8, deckY - 10);
+      ctx.lineTo(bridgeX - dir * 8, deckY - 22);
+      ctx.lineTo(bridgeX + dir * 12, deckY - 22);
+      ctx.lineTo(bridgeX + dir * 12, deckY - 14);
+      ctx.lineTo(bridgeX + dir * 6, deckY - 14);
+      ctx.lineTo(bridgeX + dir * 6, deckY - 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Funnel
+      var funnelX = bridgeX + dir * 18;
+      ctx.beginPath();
+      ctx.moveTo(funnelX - dir * 5, deckY - 10);
+      ctx.lineTo(funnelX - dir * 4, deckY - 24);
+      ctx.lineTo(funnelX + dir * 7, deckY - 22);
+      ctx.lineTo(funnelX + dir * 7, deckY - 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Aft gun
+      var aftGunX = sternX + dir * 10;
+      ctx.beginPath();
+      ctx.arc(aftGunX, deckY - 4, 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(aftGunX, deckY - 4);
+      ctx.lineTo(aftGunX - dir * 12, deckY - 12);
+      ctx.stroke();
+      
+      // Mast with radar
+      var mastX = bridgeX + dir * 4;
+      ctx.beginPath();
+      ctx.moveTo(mastX, deckY - 10);
+      ctx.lineTo(mastX, deckY - 30);
+      ctx.stroke();
+      // Radar array
+      ctx.beginPath();
+      ctx.moveTo(mastX - 10, deckY - 26);
+      ctx.lineTo(mastX + 10, deckY - 26);
+      ctx.stroke();
+      
     } else if (s.type === SHIP_PT) {
-      ctx.moveTo(x - hw, y);
-      ctx.lineTo(x - hw * 0.2, y - s.h);
-      ctx.lineTo(x + hw, y - s.h * 0.45);
-      ctx.lineTo(x + hw * 0.7, y);
+      // PT Boat: planing hull, sharp bow, low profile, forward gun, bridge, twin exhausts
+      // Hull - V-shaped planing hull
+      ctx.moveTo(sternX, keelY + 2);
+      ctx.lineTo(sternX + dir * 10, deckY + 4);
+      ctx.lineTo(bowX - dir * 6, deckY - 2);
+      ctx.lineTo(bowX, keelY - 4);
+      ctx.lineTo(bowX - dir * 4, keelY + 2);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+      
+      // Chine lines (planing hull characteristic)
+      ctx.beginPath();
+      ctx.moveTo(sternX + dir * 4, keelY);
+      ctx.lineTo(bowX - dir * 4, deckY);
+      ctx.stroke();
+      
+      // Forward gun (20mm cannon)
+      var gunX = bowX - dir * 10;
+      ctx.beginPath();
+      ctx.arc(gunX, deckY, 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(gunX, deckY);
+      ctx.lineTo(gunX + dir * 12, deckY - 6);
+      ctx.stroke();
+      
+      // Bridge/cockpit (low, streamlined)
+      var bridgeX = bowX - dir * 22;
+      ctx.beginPath();
+      ctx.moveTo(bridgeX - dir * 6, deckY + 2);
+      ctx.lineTo(bridgeX - dir * 6, deckY - 8);
+      ctx.lineTo(bridgeX + dir * 10, deckY - 10);
+      ctx.lineTo(bridgeX + dir * 10, deckY - 4);
+      ctx.lineTo(bridgeX + dir * 4, deckY - 4);
+      ctx.lineTo(bridgeX + dir * 4, deckY + 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Windshield
+      ctx.beginPath();
+      ctx.moveTo(bridgeX + dir * 2, deckY - 4);
+      ctx.lineTo(bridgeX + dir * 8, deckY - 8);
+      ctx.stroke();
+      
+      // Twin exhausts aft
+      ctx.beginPath();
+      ctx.moveTo(sternX + dir * 4, deckY + 2);
+      ctx.lineTo(sternX + dir * 4, deckY + 10);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(sternX + dir * 10, deckY + 2);
+      ctx.lineTo(sternX + dir * 10, deckY + 10);
+      ctx.stroke();
+      
+      // Mast (short)
+      var mastX = bridgeX + dir * 2;
+      ctx.beginPath();
+      ctx.moveTo(mastX, deckY - 6);
+      ctx.lineTo(mastX, deckY - 18);
+      ctx.stroke();
+      
     } else {
-      // command boat — small diamond hull
-      ctx.moveTo(x - hw, y - s.h * 0.3);
-      ctx.lineTo(x, y - s.h);
-      ctx.lineTo(x + hw, y - s.h * 0.3);
-      ctx.lineTo(x, y + 2);
+      // COMMAND SHIP: larger, distinctive - raked bow, large bridge, tripod mast, radar, flag
+      // Hull - longer, more elegant
+      ctx.moveTo(sternX, keelY);
+      ctx.lineTo(sternX + dir * 10, deckY);
+      ctx.lineTo(bowX - dir * 6, deckY - 3);
+      ctx.lineTo(bowX, keelY - 2);
+      ctx.lineTo(bowX - dir * 3, keelY);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = classicMode ? "#ffff00" : COL_SHIP_CMD;
-      ctx.fillRect(x - 2, y - s.h - 6, 4, 4);
+      
+      // Forecastle
+      ctx.beginPath();
+      ctx.moveTo(bowX - dir * 22, deckY);
+      ctx.lineTo(bowX - dir * 6, deckY - 3);
+      ctx.lineTo(bowX - dir * 6, deckY - 12);
+      ctx.lineTo(bowX - dir * 22, deckY - 12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Forward gun (larger)
+      var gunX = bowX - dir * 14;
+      ctx.beginPath();
+      ctx.arc(gunX, deckY - 6, 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(gunX, deckY - 6);
+      ctx.lineTo(gunX + dir * 16, deckY - 18);
+      ctx.stroke();
+      
+      // Large bridge superstructure
+      var bridgeX = bowX - dir * 36;
+      ctx.beginPath();
+      ctx.moveTo(bridgeX - dir * 10, deckY - 12);
+      ctx.lineTo(bridgeX - dir * 10, deckY - 28);
+      ctx.lineTo(bridgeX + dir * 16, deckY - 28);
+      ctx.lineTo(bridgeX + dir * 16, deckY - 18);
+      ctx.lineTo(bridgeX + dir * 8, deckY - 18);
+      ctx.lineTo(bridgeX + dir * 8, deckY - 12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Bridge windows (two rows)
+      ctx.beginPath();
+      ctx.moveTo(bridgeX - dir * 8, deckY - 16);
+      ctx.lineTo(bridgeX + dir * 14, deckY - 16);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(bridgeX - dir * 8, deckY - 24);
+      ctx.lineTo(bridgeX + dir * 14, deckY - 24);
+      ctx.stroke();
+      
+      // Tripod mast
+      var mastX = bridgeX + dir * 4;
+      ctx.beginPath();
+      ctx.moveTo(mastX, deckY - 12);
+      ctx.lineTo(mastX, deckY - 38);
+      ctx.stroke();
+      // Tripod legs
+      ctx.beginPath();
+      ctx.moveTo(mastX, deckY - 38);
+      ctx.lineTo(mastX - 12, deckY - 20);
+      ctx.moveTo(mastX, deckY - 38);
+      ctx.lineTo(mastX + 12, deckY - 20);
+      ctx.moveTo(mastX, deckY - 38);
+      ctx.lineTo(mastX, deckY - 8);
+      ctx.stroke();
+      
+      // Radar array on mast
+      ctx.beginPath();
+      ctx.arc(mastX, deckY - 34, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Aft gun
+      var aftGunX = sternX + dir * 12;
+      ctx.beginPath();
+      ctx.arc(aftGunX, deckY - 2, 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(aftGunX, deckY - 2);
+      ctx.lineTo(aftGunX - dir * 12, deckY - 12);
+      ctx.stroke();
+      
+      // Flag at masthead
+      ctx.beginPath();
+      ctx.moveTo(mastX, deckY - 38);
+      ctx.lineTo(mastX + dir * 10, deckY - 36);
+      ctx.lineTo(mastX, deckY - 34);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     }
   }
 
