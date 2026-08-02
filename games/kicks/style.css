@@ -92,9 +92,10 @@
   color: #fff;
 }
 
-#pad-slow.held {
+#pad-boost.held {
   border-color: var(--amber);
   color: var(--amber);
+  background: rgba(255, 184, 74, 0.22);
 }
 
 #overlay {

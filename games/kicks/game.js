@@ -74,6 +74,10 @@
   var invuln = 0;
   var fuseIdle = 0;
   var FUSE_GRACE = 22;
+  var BOOST_MAX = 100;
+  var BOOST_DRAIN = 1.35;
+  var BOOST_RECHARGE = 0.7;
+  var boost = BOOST_MAX;
 
   var qixes = [];
   var sparx = [];
@@ -354,7 +358,26 @@
     stixAllSlow = true;
     fuseOn = false;
     fuseIndex = 0;
+    boost = BOOST_MAX;
     fillPct = calcFillPct();
+  }
+
+  function wantsBoost() {
+    return !!(keys.x || keys.X || keys.fast || keys.boost);
+  }
+
+  function usingBoost() {
+    return wantsBoost() && boost > 0;
+  }
+
+  function boostBar() {
+    var n = Math.max(0, Math.min(10, Math.round((boost / BOOST_MAX) * 10)));
+    var i;
+    var s = "";
+    for (i = 0; i < 10; i++) {
+      s += i < n ? "█" : "░";
+    }
+    return s;
   }
 
   function calcFillPct() {
@@ -431,11 +454,14 @@
 
   function playTip() {
     if (drawing) {
-      return "HOLD arrows — close your line back to a white border (don't stop)";
+      if (usingBoost()) {
+        return "BOOST on — release X/BOOST for slow (2×). Close line to a border";
+      }
+      return "SLOW draw (2×) — hold X/BOOST for speed. Close line to a border";
     }
     if (fillPct + 0.05 < targetPct) {
       return (
-        "Walk white borders, then HOLD SLOW/Z + arrows into dark space. Need " +
+        "Walk borders, then HOLD arrows into dark to draw. Need " +
         targetPct +
         "% fill"
       );
@@ -459,7 +485,9 @@
       targetPct +
       "%   ×" +
       scoreMult +
-      (drawing ? (drawSlow ? "   SLOW DRAW" : "   FAST DRAW") : "   SAFE") +
+      (drawing ? (drawSlow ? "   SLOW" : "   BOOST") : "   SAFE") +
+      "   BOOST " +
+      boostBar() +
       "\n" +
       playTip() +
       (bannerT > 0 ? "\n" + banner : "");
@@ -487,11 +515,11 @@
     overlayTitle.textContent = "KICKS";
     instructionsEl.textContent =
       "HOW TO PLAY\n" +
-      "1) Without SLOW/FAST you only walk the white borders.\n" +
-      "2) HOLD SLOW (Z) or FAST (X), then HOLD arrows into the dark area to draw a line.\n" +
-      "3) Keep holding until the line touches a border again — that loop fills and reveals the image.\n" +
-      "4) Repeat until FILL hits the target %. Avoid the spinning Qix while drawing.\n" +
-      "Tip: hold keys (don't tap). On-screen pad works the same.";
+      "1) Walk the white borders with arrows / WASD (no button).\n" +
+      "2) HOLD arrows into the dark area to draw at SLOW speed (2× score if all slow).\n" +
+      "3) Hold X / BOOST for a limited fast burst; release to go back to slow.\n" +
+      "4) Close the line on a border to claim & reveal. Repeat until FILL hits the target %.\n" +
+      "Avoid the spinning Qix while your line is open. Hold keys — don't tap.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -556,17 +584,9 @@
     if (!inBounds(nx, ny)) {
       return;
     }
-    var wantDraw =
-      keys.z || keys.Z || keys.x || keys.X || keys.slow || keys.fast;
-    drawSlow = !!(keys.z || keys.Z || keys.slow);
 
-    if (!wantDraw) {
-      if (!isWalkable(nx, ny)) {
-        return;
-      }
-      if (drawing) {
-        return;
-      }
+    // Safe border walk (not drawing)
+    if (!drawing && isWalkable(nx, ny)) {
       px = nx;
       py = ny;
       moveCool = 2;
@@ -574,19 +594,17 @@
       return;
     }
 
-    // Start or continue drawing into open / along stix tip
+    // Leave border into dark → start slow draw (boost optional)
     if (!drawing) {
-      if (!isWalkable(px, py)) {
-        return;
-      }
-      if (!isOpen(nx, ny)) {
+      if (!isWalkable(px, py) || !isOpen(nx, ny)) {
         return;
       }
       drawing = true;
       stix = [{ x: px, y: py }];
-      stixAllSlow = drawSlow;
+      stixAllSlow = true;
       fuseOn = false;
       fuseIndex = 0;
+      fuseIdle = 0;
     }
 
     if (nx === px && ny === py) {
@@ -608,6 +626,8 @@
       }
     }
 
+    drawSlow = !usingBoost();
+
     if (isOpen(nx, ny)) {
       if (!drawSlow) {
         stixAllSlow = false;
@@ -616,7 +636,7 @@
       stix.push({ x: nx, y: ny });
       px = nx;
       py = ny;
-      moveCool = drawSlow ? 3 : 2;
+      moveCool = drawSlow ? 4 : 2;
       fuseOn = false;
       fuseIdle = 0;
       return;
@@ -1006,6 +1026,12 @@
       bannerT--;
     }
 
+    if (drawing && usingBoost()) {
+      boost = Math.max(0, boost - BOOST_DRAIN);
+    } else if (!drawing) {
+      boost = Math.min(BOOST_MAX, boost + BOOST_RECHARGE);
+    }
+
     var dx = 0;
     var dy = 0;
     if (keys.ArrowLeft || keys.left || keys.a || keys.A) {
@@ -1277,7 +1303,7 @@
       "LEVEL " + level,
       "Goal: fill " +
         targetPct +
-        "% of the dark area. HOLD SLOW/Z + arrows to draw loops from the white border. Multiplier ×" +
+        "%. Arrows into dark = slow draw (2×). Hold X/BOOST for a limited fast burst. Multiplier ×" +
         scoreMult
     );
   }
@@ -1639,27 +1665,16 @@
       }
     );
     bindPadButton(
-      document.getElementById("pad-slow"),
-      function () {
-        keys.slow = true;
-        keys.z = true;
-        keys.Z = true;
-      },
-      function () {
-        keys.slow = false;
-        keys.z = false;
-        keys.Z = false;
-      }
-    );
-    bindPadButton(
-      document.getElementById("pad-fast"),
+      document.getElementById("pad-boost"),
       function () {
         keys.fast = true;
+        keys.boost = true;
         keys.x = true;
         keys.X = true;
       },
       function () {
         keys.fast = false;
+        keys.boost = false;
         keys.x = false;
         keys.X = false;
       }
