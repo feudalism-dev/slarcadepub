@@ -82,8 +82,9 @@
   var qixes = [];
   var sparx = [];
   var sparxTimer = SPARX_TIMER_MAX;
+  var sparxTimerMax = SPARX_TIMER_MAX;
   var superSparx = false;
-  var sparxUnlocked = false;
+  var sparxUnlocked = true;
 
   var keys = {};
   var aiming = false;
@@ -487,38 +488,44 @@
     }
   }
 
+  function sparxMoveEvery() {
+    // Early levels: slow patrol. Later: faster. Super Sparx move every frame.
+    if (level <= 2) {
+      return 4;
+    }
+    if (level <= 5) {
+      return 3;
+    }
+    if (level <= 8) {
+      return 2;
+    }
+    return 1;
+  }
+
   function spawnSparxPair() {
     sparx.push({
       x: 0,
       y: 0,
       dir: 0,
       super: superSparx,
+      cool: 0,
     });
     sparx.push({
       x: COLS - 1,
       y: 0,
       dir: 1,
       super: superSparx,
+      cool: 2,
     });
   }
 
   function resetSparx() {
-    // No Sparx until the player finishes their first claim this level.
     sparx = [];
-    sparxTimer = SPARX_TIMER_MAX;
     superSparx = false;
-    sparxUnlocked = false;
-  }
-
-  function unlockSparxAfterFirstClaim() {
-    if (sparxUnlocked) {
-      return;
-    }
     sparxUnlocked = true;
-    sparx = [];
-    sparxTimer = Math.max(22 * 60, SPARX_TIMER_MAX - level * 80);
-    banner = "Sparx incoming soon — top bar";
-    bannerT = 120;
+    // First pair after a short grace so you can leave the spawn edge
+    sparxTimerMax = Math.max(8 * 60, 14 * 60 - level * 30);
+    sparxTimer = sparxTimerMax;
   }
 
   function playTip() {
@@ -528,23 +535,16 @@
       }
       return "Keep moving — close your line on a white border to claim";
     }
-    if (!sparxUnlocked) {
-      return (
-        "Walk the white border, then cut into the DARK to draw. First claim is Sparx-free. Need " +
-        targetPct +
-        "%"
-      );
-    }
     if (!sparx.length) {
       return (
-        "Sparx soon (top bar). Walk borders, cut into dark to claim. Need " +
+        "Walk borders, cut into dark to claim. Sparx arrive when the bottom bar empties. Need " +
         targetPct +
         "%"
       );
     }
     if (fillPct + 0.05 < targetPct) {
       return (
-        "On borders you're safe from the Qix. Cut into dark to claim. Sparx (purple) hurt on borders. Need " +
+        "On borders you're safe from the Qix. Sparx (purple) hurt on borders. Need " +
         targetPct +
         "%"
       );
@@ -595,6 +595,7 @@
 
   function showMenuOverlay() {
     overlay.classList.remove("hidden");
+    overlay.classList.remove("level-clear");
     overlayTitle.textContent = "KICKS";
     instructionsEl.textContent =
       "HOW TO PLAY\n" +
@@ -602,7 +603,8 @@
       "• When ready, hold toward the DARK (into the open field) to start drawing a line.\n" +
       "• From the top edge that means Down; from a side edge it means toward the middle.\n" +
       "• Close the line back onto any white border to claim that area and reveal the image.\n" +
-      "• Top red bar = when purple Sparx appear (dangerous on borders). Space = boost.\n" +
+      "• Bottom red bar = when purple Sparx appear (slow at first; deadly on borders).\n" +
+      "• Space = boost. After a clear, view the full image then tap NEXT LEVEL.\n" +
       "Goal: reach the FILL % target.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
@@ -621,6 +623,7 @@
     running = false;
     readyTimer = READY_FRAMES;
     overlay.classList.remove("hidden");
+    overlay.classList.remove("level-clear");
     overlayTitle.textContent = title || "GET READY";
     instructionsEl.textContent = hint || "";
     endHintEl.textContent = "";
@@ -629,15 +632,30 @@
     setQuitVisible(true);
   }
 
+  function revealFullImage() {
+    var i;
+    for (i = 0; i < field.length; i++) {
+      field[i] = CLAIMED;
+    }
+    drawing = false;
+    stix = [];
+    fuseOn = false;
+    sparx = [];
+    fillPct = 100;
+  }
+
   function showLevelClear(overPct, splitBonus) {
+    var shownFill = fillPct;
     phase = PHASE_LEVEL;
     running = false;
     setTouchPadVisible(false);
+    revealFullImage();
     overlay.classList.remove("hidden");
+    overlay.classList.add("level-clear");
     overlayTitle.textContent = splitBonus ? "QIX SPLIT!" : "LEVEL CLEAR";
     var msg =
       "Fill " +
-      fillPct.toFixed(1) +
+      shownFill.toFixed(1) +
       "% — Target " +
       targetPct +
       "%";
@@ -648,11 +666,12 @@
       msg += " — Multiplier now ×" + scoreMult;
     }
     instructionsEl.textContent = msg;
-    endHintEl.textContent = "";
+    endHintEl.textContent = "Full image revealed — tap NEXT LEVEL when ready.";
     btnNext.textContent = "NEXT LEVEL";
     setOverlayButtons(false, true);
     setStartScreenExtras(false);
     setQuitVisible(true);
+    updateHud();
   }
 
   function cellCenter(x, y) {
@@ -877,7 +896,6 @@
     fuseOn = false;
     fuseIdle = 0;
     fillPct = calcFillPct();
-    unlockSparxAfterFirstClaim();
     updateHud();
 
     // Dual Qix split?
@@ -1045,37 +1063,38 @@
   }
 
   function updateSparxEntity(s) {
-    var speed = s.super ? 2 : 1;
-    var step;
-    for (step = 0; step < speed; step++) {
-      var opts = perimeterNeighbors(s.x, s.y);
-      if (!opts.length) {
-        return;
-      }
-      // Mostly patrol; light chase so they are avoidable
-      var best = opts[(Math.random() * opts.length) | 0];
-      if (Math.random() < 0.35) {
-        var bestD = 1e9;
-        var i;
-        for (i = 0; i < opts.length; i++) {
-          var scoreD = Math.abs(opts[i].x - px) + Math.abs(opts[i].y - py);
-          if (scoreD < bestD) {
-            bestD = scoreD;
-            best = opts[i];
-          }
+    if (s.cool > 0) {
+      s.cool--;
+      return;
+    }
+    s.cool = s.super ? 0 : sparxMoveEvery() - 1;
+
+    var opts = perimeterNeighbors(s.x, s.y);
+    if (!opts.length) {
+      return;
+    }
+    // Mostly patrol; light chase so they are avoidable
+    var best = opts[(Math.random() * opts.length) | 0];
+    if (Math.random() < 0.3) {
+      var bestD = 1e9;
+      var i;
+      for (i = 0; i < opts.length; i++) {
+        var scoreD = Math.abs(opts[i].x - px) + Math.abs(opts[i].y - py);
+        if (scoreD < bestD) {
+          bestD = scoreD;
+          best = opts[i];
         }
       }
-      s.x = best.x;
-      s.y = best.y;
-      if (s.super && drawing) {
-        // Super sparx can step onto stix tip cells near player
-        var j;
-        for (j = 0; j < stix.length; j++) {
-          if (Math.abs(stix[j].x - s.x) + Math.abs(stix[j].y - s.y) <= 1) {
-            if (stix[j].x === px && stix[j].y === py) {
-              killPlayer("SUPER SPARX!");
-              return;
-            }
+    }
+    s.x = best.x;
+    s.y = best.y;
+    if (s.super && drawing) {
+      var j;
+      for (j = 0; j < stix.length; j++) {
+        if (Math.abs(stix[j].x - s.x) + Math.abs(stix[j].y - s.y) <= 1) {
+          if (stix[j].x === px && stix[j].y === py) {
+            killPlayer("SUPER SPARX!");
+            return;
           }
         }
       }
@@ -1173,37 +1192,33 @@
       return;
     }
 
-    if (sparxUnlocked) {
-      sparxTimer--;
-      if (sparxTimer <= 0) {
-        sparxTimer = Math.max(18 * 60, SPARX_TIMER_MAX - level * 100);
-        if (sparx.length >= 4) {
-          superSparx = true;
-          var si;
-          for (si = 0; si < sparx.length; si++) {
-            sparx[si].super = true;
-          }
-          banner = "SUPER SPARX!";
-          bannerT = 100;
-        } else {
-          var hadSparx = sparx.length > 0;
-          spawnSparxPair();
-          if (!hadSparx) {
-            banner = "SPARX! Purple dots on the border — avoid them";
-            bannerT = 140;
-          }
+    sparxTimer--;
+    if (sparxTimer <= 0) {
+      sparxTimerMax = Math.max(16 * 60, SPARX_TIMER_MAX - level * 90);
+      sparxTimer = sparxTimerMax;
+      if (sparx.length >= 4) {
+        superSparx = true;
+        var si;
+        for (si = 0; si < sparx.length; si++) {
+          sparx[si].super = true;
+        }
+        banner = "SUPER SPARX!";
+        bannerT = 100;
+      } else {
+        var hadSparx = sparx.length > 0;
+        spawnSparxPair();
+        if (!hadSparx) {
+          banner = "SPARX! Purple dots on the border — avoid them";
+          bannerT = 140;
         }
       }
-      for (qi = 0; qi < sparx.length; qi++) {
-        updateSparxEntity(sparx[qi]);
-        if (sparx[qi].x === px && sparx[qi].y === py && invuln <= 0) {
-          killPlayer("SPARX!");
-          return;
-        }
+    }
+    for (qi = 0; qi < sparx.length; qi++) {
+      updateSparxEntity(sparx[qi]);
+      if (sparx[qi].x === px && sparx[qi].y === py && invuln <= 0) {
+        killPlayer("SPARX!");
+        return;
       }
-    } else if (sparx.length) {
-      // Belts-and-suspenders: never show border hunters before first claim.
-      sparx = [];
     }
 
     fillPct = calcFillPct();
@@ -1225,10 +1240,11 @@
     ctx.fillStyle = "#0a1020";
     ctx.fillRect(0, 0, WORLD, WORLD);
 
-    // Reveal image under claimed cells (one drawImage — safe + CEF-friendly)
+    // Reveal image under claimed cells (full image on level-clear)
     var x;
     var y;
     var drewReveal = false;
+    var showFullArt = phase === PHASE_LEVEL;
     if (
       revealReady &&
       revealImg &&
@@ -1236,21 +1252,26 @@
       revealImg.naturalHeight > 0
     ) {
       try {
-        ctx.save();
-        ctx.beginPath();
-        for (y = 0; y < ROWS; y++) {
-          for (x = 0; x < COLS; x++) {
-            if (field[idx(x, y)] === CLAIMED) {
-              ctx.rect(x * CELL, y * CELL, CELL + 0.5, CELL + 0.5);
+        if (showFullArt) {
+          ctx.drawImage(revealImg, 0, 0, WORLD, WORLD);
+          drewReveal = true;
+        } else {
+          ctx.save();
+          ctx.beginPath();
+          for (y = 0; y < ROWS; y++) {
+            for (x = 0; x < COLS; x++) {
+              if (field[idx(x, y)] === CLAIMED) {
+                ctx.rect(x * CELL, y * CELL, CELL + 0.5, CELL + 0.5);
+              }
             }
           }
+          ctx.clip();
+          ctx.drawImage(revealImg, 0, 0, WORLD, WORLD);
+          ctx.fillStyle = "rgba(61, 240, 255, 0.06)";
+          ctx.fillRect(0, 0, WORLD, WORLD);
+          ctx.restore();
+          drewReveal = true;
         }
-        ctx.clip();
-        ctx.drawImage(revealImg, 0, 0, WORLD, WORLD);
-        ctx.fillStyle = "rgba(61, 240, 255, 0.06)";
-        ctx.fillRect(0, 0, WORLD, WORLD);
-        ctx.restore();
-        drewReveal = true;
       } catch (drawErr) {
         drewReveal = false;
       }
@@ -1264,6 +1285,11 @@
           }
         }
       }
+    }
+
+    // Level-clear: show only the full artwork until NEXT LEVEL
+    if (showFullArt) {
+      return;
     }
 
     // Bright edge on claim/open boundary so the walkable path stays visible
@@ -1434,7 +1460,7 @@
     ctx.fillStyle = "rgba(40,12,18,0.9)";
     ctx.fillRect(meterX, meterY + 6, meterW, 6);
     ctx.fillStyle = superSparx ? "#ff4d6d" : "#ff6b6b";
-    var meterFill = meterW * (sparxTimer / SPARX_TIMER_MAX);
+    var meterFill = meterW * (sparxTimer / Math.max(1, sparxTimerMax));
     if (meterFill < 0) {
       meterFill = 0;
     }
@@ -1448,11 +1474,7 @@
     ctx.font = "bold 9px Segoe UI, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(
-      !sparxUnlocked
-        ? "SPARX AFTER FIRST CLAIM"
-        : sparx.length
-          ? "NEXT SPARX"
-          : "SPARX ARRIVE WHEN EMPTY",
+      sparx.length ? "NEXT SPARX" : "SPARX ARRIVE WHEN EMPTY",
       WORLD * 0.5,
       meterY + 5
     );
