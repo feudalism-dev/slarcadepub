@@ -3,9 +3,11 @@
 
   SLArcade.registerGameId("kicks");
 
+  var gameWrap = document.getElementById("game-wrap");
   var canvas = document.getElementById("game");
   var ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
+  var revealPanel = document.getElementById("reveal-panel");
   var overlay = document.getElementById("overlay");
   var overlayTitle = document.getElementById("overlay-title");
   var btnStart = document.getElementById("btn-start");
@@ -249,39 +251,43 @@
     );
   }
 
+  function setRevealFront(on) {
+    if (gameWrap) {
+      gameWrap.classList.toggle("reveal-front", !!on);
+    }
+  }
+
   function loadRevealImage() {
     revealReady = false;
+    revealImg = null;
+    setRevealFront(false);
+    if (revealPanel) {
+      revealPanel.classList.remove("ready");
+      revealPanel.removeAttribute("src");
+    }
     var direct = resolveImageUrl();
     function useUrl(url) {
-      if (!url) {
+      if (!url || !revealPanel) {
         revealReady = false;
-        revealImg = null;
         return;
       }
-      var triedNoCors = false;
-      function bind(img, withCors) {
-        revealImg = img;
-        if (withCors) {
-          img.crossOrigin = "anonymous";
-        }
-        img.onload = function () {
-          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-            revealReady = true;
-          } else {
-            revealReady = false;
-          }
-        };
-        img.onerror = function () {
-          if (withCors && !triedNoCors) {
-            triedNoCors = true;
-            bind(new Image(), false);
-            return;
-          }
+      // DOM <img> display does not need canvas CORS — just cache in the panel.
+      revealPanel.onload = function () {
+        if (revealPanel.naturalWidth > 0 && revealPanel.naturalHeight > 0) {
+          revealReady = true;
+          revealImg = revealPanel;
+          revealPanel.classList.add("ready");
+        } else {
           revealReady = false;
-        };
-        img.src = url;
-      }
-      bind(new Image(), true);
+          revealPanel.classList.remove("ready");
+        }
+      };
+      revealPanel.onerror = function () {
+        revealReady = false;
+        revealImg = null;
+        revealPanel.classList.remove("ready");
+      };
+      revealPanel.src = url;
     }
     if (direct) {
       useUrl(direct);
@@ -657,6 +663,7 @@
   }
 
   function showMenuOverlay() {
+    setRevealFront(false);
     overlay.classList.remove("hidden");
     overlay.classList.remove("level-clear");
     overlayTitle.textContent = "KICKS";
@@ -685,6 +692,7 @@
     phase = PHASE_READY;
     running = false;
     readyTimer = READY_FRAMES;
+    setRevealFront(false);
     overlay.classList.remove("hidden");
     overlay.classList.remove("level-clear");
     overlayTitle.textContent = title || "GET READY";
@@ -713,6 +721,7 @@
     running = false;
     setTouchPadVisible(false);
     revealFullImage();
+    setRevealFront(true);
     overlay.classList.remove("hidden");
     overlay.classList.add("level-clear");
     overlayTitle.textContent = splitBonus ? "QIX SPLIT!" : "LEVEL CLEAR";
@@ -1313,47 +1322,39 @@
     var scale = Math.min(canvas.width / WORLD, canvas.height / WORLD);
     var ox = (canvas.width - WORLD * scale) / 2;
     var oy = (canvas.height - WORLD * scale) / 2;
+    var worldW = WORLD * scale;
+    var worldH = WORLD * scale;
+    var x;
+    var y;
+
+    // Level-clear: DOM panel is in front — skip canvas work
+    if (phase === PHASE_LEVEL) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // Letterbox bars opaque; playfield hole transparent so #reveal-panel shows through
     ctx.fillStyle = "#04060e";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(ox, oy, worldW, worldH);
     ctx.translate(ox, oy);
     ctx.scale(scale, scale);
 
-    // Unclaimed fog base
-    ctx.fillStyle = "#0a1020";
-    ctx.fillRect(0, 0, WORLD, WORLD);
-
-    // Reveal: draw full image, then fog only OPEN cells.
-    // (Per-cell clip paths with thousands of rects freeze CEF/SL when nearly full.)
-    var x;
-    var y;
-    var drewReveal = false;
-    var showFullArt = phase === PHASE_LEVEL;
-    if (
-      revealReady &&
-      revealImg &&
-      revealImg.naturalWidth > 0 &&
-      revealImg.naturalHeight > 0
-    ) {
-      try {
-        ctx.drawImage(revealImg, 0, 0, WORLD, WORLD);
-        if (!showFullArt) {
-          // Fog unclaimed only (cheap when mostly filled — the freeze case)
-          ctx.fillStyle = "#0a1020";
-          for (y = 0; y < ROWS; y++) {
-            for (x = 0; x < COLS; x++) {
-              if (field[idx(x, y)] !== CLAIMED) {
-                ctx.fillRect(x * CELL, y * CELL, CELL + 0.5, CELL + 0.5);
-              }
-            }
+    if (revealReady) {
+      // Image is the DOM panel behind the canvas — fog only unclaimed cells
+      ctx.fillStyle = "#0a1020";
+      for (y = 0; y < ROWS; y++) {
+        for (x = 0; x < COLS; x++) {
+          if (field[idx(x, y)] !== CLAIMED) {
+            ctx.fillRect(x * CELL, y * CELL, CELL + 0.5, CELL + 0.5);
           }
         }
-        drewReveal = true;
-      } catch (drawErr) {
-        drewReveal = false;
       }
-    }
-    if (!drewReveal) {
+    } else {
+      ctx.fillStyle = "#0a1020";
+      ctx.fillRect(0, 0, WORLD, WORLD);
       ctx.fillStyle = "#152238";
       for (y = 0; y < ROWS; y++) {
         for (x = 0; x < COLS; x++) {
@@ -1364,12 +1365,7 @@
       }
     }
 
-    // Level-clear: show only the full artwork until NEXT LEVEL
-    if (showFullArt) {
-      return;
-    }
-
-    // Bright edge only on shoreline (claimed next to open) — skip solid interiors
+    // Bright edge only on shoreline (claimed next to open)
     ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
     ctx.lineWidth = 1.25;
     for (y = 0; y < ROWS; y++) {
