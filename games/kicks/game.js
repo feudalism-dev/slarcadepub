@@ -455,9 +455,9 @@
   function playTip() {
     if (drawing) {
       if (usingBoost()) {
-        return "BOOST on — release X/BOOST for slow (2×). Close line to a border";
+        return "BOOST on — release Space/X for slow (2×). Close line to a border";
       }
-      return "SLOW draw (2×) — hold X/BOOST for speed. Close line to a border";
+      return "SLOW draw (2×) — hold Space/X for speed. Close line to a border";
     }
     if (fillPct + 0.05 < targetPct) {
       return (
@@ -517,7 +517,7 @@
       "HOW TO PLAY\n" +
       "1) Walk the white borders with arrows / WASD (no button).\n" +
       "2) HOLD arrows into the dark area to draw at SLOW speed (2× score if all slow).\n" +
-      "3) Hold X / BOOST for a limited fast burst; release to go back to slow.\n" +
+      "3) Hold Space or X / BOOST for a limited fast burst; release to go back to slow.\n" +
       "4) Close the line on a border to claim & reveal. Repeat until FILL hits the target %.\n" +
       "Avoid the spinning Qix while your line is open. Hold keys — don't tap.";
     endHintEl.textContent = "";
@@ -1303,7 +1303,7 @@
       "LEVEL " + level,
       "Goal: fill " +
         targetPct +
-        "%. Arrows into dark = slow draw (2×). Hold X/BOOST for a limited fast burst. Multiplier ×" +
+        "%. Arrows into dark = slow draw (2×). Hold Space/X for a limited fast burst. Multiplier ×" +
         scoreMult
     );
   }
@@ -1545,6 +1545,12 @@
       keys.x = isDown;
       keys.X = isDown;
     }
+    if (code === "Space" || key === " " || key === "Spacebar" || kc === 32) {
+      keys.boost = isDown;
+      keys.fast = isDown;
+      keys.x = isDown;
+      keys.X = isDown;
+    }
     if (code === "Escape" || key === "Escape" || key === "Esc" || kc === 27) {
       if (isDown) {
         quitGame();
@@ -1568,6 +1574,7 @@
     }
     var kc = e.keyCode || e.which || 0;
     return (
+      kc === 32 ||
       kc === 37 ||
       kc === 38 ||
       kc === 39 ||
