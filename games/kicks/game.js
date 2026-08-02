@@ -444,6 +444,7 @@
       "%   ×" +
       scoreMult +
       (drawing ? (drawSlow ? "   SLOW DRAW" : "   FAST DRAW") : "   SAFE") +
+      "\nClick game for keys, or use on-screen pad (SLOW/FAST + arrows)" +
       (bannerT > 0 ? "\n" + banner : "");
   }
 
@@ -468,13 +469,14 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "KICKS";
     instructionsEl.textContent =
-      "Claim territory to reveal the image. Arrows/WASD move. Hold Z=slow draw (2×), X=fast draw. Close loops away from the Qix. Sparx patrol edges.";
+      "Click the game for keyboard focus, or use the on-screen pad. Arrows/WASD move. Hold Z or SLOW for 2× draw; X or FAST for quick draw. Close loops away from the Qix.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
     setOverlayButtons(true, false);
     setStartScreenExtras(true);
     setQuitVisible(false);
+    setTouchPadVisible(false);
     if (lastLeaderboardData) {
       updateStartScores(lastLeaderboardData);
     }
@@ -496,6 +498,7 @@
   function showLevelClear(overPct, splitBonus) {
     phase = PHASE_LEVEL;
     running = false;
+    setTouchPadVisible(false);
     overlay.classList.remove("hidden");
     overlayTitle.textContent = splitBonus ? "QIX SPLIT!" : "LEVEL CLEAR";
     var msg =
@@ -531,8 +534,9 @@
     if (!inBounds(nx, ny)) {
       return;
     }
-    var wantDraw = keys.z || keys.Z || keys.x || keys.X;
-    drawSlow = !!(keys.z || keys.Z);
+    var wantDraw =
+      keys.z || keys.Z || keys.x || keys.X || keys.slow || keys.fast;
+    drawSlow = !!(keys.z || keys.Z || keys.slow);
 
     if (!wantDraw) {
       if (!isWalkable(nx, ny)) {
@@ -973,13 +977,13 @@
 
     var dx = 0;
     var dy = 0;
-    if (keys.ArrowLeft || keys.a || keys.A) {
+    if (keys.ArrowLeft || keys.left || keys.a || keys.A) {
       dx = -1;
-    } else if (keys.ArrowRight || keys.d || keys.D) {
+    } else if (keys.ArrowRight || keys.right || keys.d || keys.D) {
       dx = 1;
-    } else if (keys.ArrowUp || keys.w || keys.W) {
+    } else if (keys.ArrowUp || keys.up || keys.w || keys.W) {
       dy = -1;
-    } else if (keys.ArrowDown || keys.s || keys.S) {
+    } else if (keys.ArrowDown || keys.down || keys.s || keys.S) {
       dy = 1;
     }
     if (dx || dy) {
@@ -1259,6 +1263,7 @@
   function gameOver() {
     phase = PHASE_OVER;
     running = false;
+    setTouchPadVisible(false);
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "GAME OVER";
     instructionsEl.textContent = "Final score: " + score + " — Level " + level;
@@ -1391,10 +1396,237 @@
     }
   }
 
+  function setTouchPadVisible(visible) {
+    var pad = document.getElementById("touch-pad");
+    if (!pad) {
+      return;
+    }
+    pad.classList.toggle("hidden", !visible);
+  }
+
   function grabFocus() {
     try {
+      if (document.activeElement && document.activeElement.blur) {
+        document.activeElement.blur();
+      }
+      window.focus();
+      if (!canvas.getAttribute("tabindex")) {
+        canvas.setAttribute("tabindex", "0");
+      }
       canvas.focus();
+      if (document.body) {
+        if (!document.body.getAttribute("tabindex")) {
+          document.body.setAttribute("tabindex", "0");
+        }
+      }
     } catch (e) {}
+  }
+
+  function setKeyFromEvent(e, isDown) {
+    var code = e.code || "";
+    var key = e.key || "";
+    var kc = e.keyCode || e.which || 0;
+
+    if (
+      code === "ArrowLeft" ||
+      key === "ArrowLeft" ||
+      key === "Left" ||
+      kc === 37
+    ) {
+      keys.ArrowLeft = isDown;
+      keys.left = isDown;
+    }
+    if (
+      code === "ArrowRight" ||
+      key === "ArrowRight" ||
+      key === "Right" ||
+      kc === 39
+    ) {
+      keys.ArrowRight = isDown;
+      keys.right = isDown;
+    }
+    if (code === "ArrowUp" || key === "ArrowUp" || key === "Up" || kc === 38) {
+      keys.ArrowUp = isDown;
+      keys.up = isDown;
+    }
+    if (
+      code === "ArrowDown" ||
+      key === "ArrowDown" ||
+      key === "Down" ||
+      kc === 40
+    ) {
+      keys.ArrowDown = isDown;
+      keys.down = isDown;
+    }
+    if (code === "KeyA" || key === "a" || key === "A" || kc === 65) {
+      keys.a = isDown;
+      keys.A = isDown;
+    }
+    if (code === "KeyD" || key === "d" || key === "D" || kc === 68) {
+      keys.d = isDown;
+      keys.D = isDown;
+    }
+    if (code === "KeyW" || key === "w" || key === "W" || kc === 87) {
+      keys.w = isDown;
+      keys.W = isDown;
+    }
+    if (code === "KeyS" || key === "s" || key === "S" || kc === 83) {
+      keys.s = isDown;
+      keys.S = isDown;
+    }
+    if (code === "KeyZ" || key === "z" || key === "Z" || kc === 90) {
+      keys.z = isDown;
+      keys.Z = isDown;
+    }
+    if (code === "KeyX" || key === "x" || key === "X" || kc === 88) {
+      keys.x = isDown;
+      keys.X = isDown;
+    }
+    if (code === "Escape" || key === "Escape" || key === "Esc" || kc === 27) {
+      if (isDown) {
+        quitGame();
+      }
+    }
+  }
+
+  function isNavKey(e) {
+    var code = e.code || "";
+    if (
+      code.indexOf("Arrow") === 0 ||
+      code === "KeyW" ||
+      code === "KeyA" ||
+      code === "KeyS" ||
+      code === "KeyD" ||
+      code === "KeyZ" ||
+      code === "KeyX" ||
+      code === "Space"
+    ) {
+      return true;
+    }
+    var kc = e.keyCode || e.which || 0;
+    return (
+      kc === 37 ||
+      kc === 38 ||
+      kc === 39 ||
+      kc === 40 ||
+      kc === 65 ||
+      kc === 68 ||
+      kc === 83 ||
+      kc === 87 ||
+      kc === 88 ||
+      kc === 90
+    );
+  }
+
+  function handleKeyDown(e) {
+    setKeyFromEvent(e, true);
+    if (isNavKey(e)) {
+      e.preventDefault();
+    }
+  }
+
+  function handleKeyUp(e) {
+    setKeyFromEvent(e, false);
+    if (isNavKey(e)) {
+      e.preventDefault();
+    }
+  }
+
+  function bindPadButton(el, onDown, onUp) {
+    if (!el) {
+      return;
+    }
+    function down(ev) {
+      ev.preventDefault();
+      onDown();
+      el.classList.add("held");
+    }
+    function up(ev) {
+      if (ev) {
+        ev.preventDefault();
+      }
+      onUp();
+      el.classList.remove("held");
+    }
+    el.addEventListener("mousedown", down);
+    el.addEventListener("mouseup", up);
+    el.addEventListener("mouseleave", up);
+    el.addEventListener("touchstart", down, { passive: false });
+    el.addEventListener("touchend", up, { passive: false });
+    el.addEventListener("touchcancel", up, { passive: false });
+  }
+
+  function setupTouchPad() {
+    bindPadButton(
+      document.getElementById("pad-up"),
+      function () {
+        keys.up = true;
+        keys.ArrowUp = true;
+      },
+      function () {
+        keys.up = false;
+        keys.ArrowUp = false;
+      }
+    );
+    bindPadButton(
+      document.getElementById("pad-down"),
+      function () {
+        keys.down = true;
+        keys.ArrowDown = true;
+      },
+      function () {
+        keys.down = false;
+        keys.ArrowDown = false;
+      }
+    );
+    bindPadButton(
+      document.getElementById("pad-left"),
+      function () {
+        keys.left = true;
+        keys.ArrowLeft = true;
+      },
+      function () {
+        keys.left = false;
+        keys.ArrowLeft = false;
+      }
+    );
+    bindPadButton(
+      document.getElementById("pad-right"),
+      function () {
+        keys.right = true;
+        keys.ArrowRight = true;
+      },
+      function () {
+        keys.right = false;
+        keys.ArrowRight = false;
+      }
+    );
+    bindPadButton(
+      document.getElementById("pad-slow"),
+      function () {
+        keys.slow = true;
+        keys.z = true;
+        keys.Z = true;
+      },
+      function () {
+        keys.slow = false;
+        keys.z = false;
+        keys.Z = false;
+      }
+    );
+    bindPadButton(
+      document.getElementById("pad-fast"),
+      function () {
+        keys.fast = true;
+        keys.x = true;
+        keys.X = true;
+      },
+      function () {
+        keys.fast = false;
+        keys.x = false;
+        keys.X = false;
+      }
+    );
   }
 
   function ensureLoop() {
@@ -1414,6 +1646,8 @@
           running = true;
           overlay.classList.add("hidden");
           setQuitVisible(true);
+          setTouchPadVisible(true);
+          invuln = 90;
           grabFocus();
         } else if (readyTimer < 40) {
           overlayTitle.textContent = "GO!";
@@ -1423,29 +1657,11 @@
       }
       drawWorld();
     } catch (loopErr) {
-      // Keep the frame loop alive even if a draw/update throws (common in SL CEF)
       if (typeof console !== "undefined" && console.warn) {
         console.warn("Kicks frame error", loopErr);
       }
     }
     requestAnimationFrame(loop);
-  }
-
-  function onKey(e, down) {
-    keys[e.key] = down;
-    if (down && (e.key === "Escape" || e.key === "Esc")) {
-      quitGame();
-    }
-    if (
-      down &&
-      (e.key === "ArrowUp" ||
-        e.key === "ArrowDown" ||
-        e.key === "ArrowLeft" ||
-        e.key === "ArrowRight" ||
-        e.key === " ")
-    ) {
-      e.preventDefault();
-    }
   }
 
   btnStart.addEventListener("click", startGame);
@@ -1475,14 +1691,16 @@
   btnModalClose.addEventListener("click", function () {
     leaderboardModal.classList.add("hidden");
   });
-  window.addEventListener("keydown", function (e) {
-    onKey(e, true);
-  });
-  window.addEventListener("keyup", function (e) {
-    onKey(e, false);
-  });
+  window.addEventListener("click", grabFocus);
+  window.addEventListener("keydown", handleKeyDown, true);
+  window.addEventListener("keyup", handleKeyUp, true);
+  document.addEventListener("keydown", handleKeyDown, true);
+  document.addEventListener("keyup", handleKeyUp, true);
   canvas.addEventListener("mousedown", grabFocus);
+  canvas.addEventListener("touchstart", grabFocus, { passive: true });
   window.addEventListener("resize", resizeCanvas);
+  setupTouchPad();
+  setTouchPadVisible(false);
 
   parseImgConfig();
   initField();

@@ -19,20 +19,34 @@
         background: #04060e;
       }
     </style>
-    <link rel="stylesheet" href="style.css?v=1" />
+    <link rel="stylesheet" href="style.css?v=2" />
   </head>
   <body>
     <div id="app">
       <div id="game-wrap">
-        <canvas id="game" width="600" height="600"></canvas>
+        <canvas id="game" width="600" height="600" tabindex="0"></canvas>
         <div id="hud"></div>
+        <div id="touch-pad" aria-label="On-screen controls">
+          <div class="pad-draw">
+            <button type="button" id="pad-slow" data-key="slow">SLOW</button>
+            <button type="button" id="pad-fast" data-key="fast">FAST</button>
+          </div>
+          <div class="pad-dirs">
+            <button type="button" class="pad-btn" id="pad-up" data-dir="up">▲</button>
+            <div class="pad-mid">
+              <button type="button" class="pad-btn" id="pad-left" data-dir="left">◀</button>
+              <button type="button" class="pad-btn" id="pad-down" data-dir="down">▼</button>
+              <button type="button" class="pad-btn" id="pad-right" data-dir="right">▶</button>
+            </div>
+          </div>
+        </div>
         <div id="overlay">
           <div>
             <h1 id="overlay-title">KICKS</h1>
             <p id="instructions">
-              Claim territory to reveal the image. Arrows / WASD move.
-              Hold Z = slow draw (2× score), X = fast draw. Stay on edges
-              when Sparx approach. Close a loop — the side without the Qix fills.
+              Click the game once for keyboard focus (or use the on-screen pad).
+              Arrows/WASD move. Hold Z=slow draw (2×), X=fast draw. Close a
+              loop on the border — the side without the Qix fills.
             </p>
             <p id="player-line">Player: …</p>
             <div id="start-scores" class="start-scores">
@@ -60,6 +74,6 @@
       </div>
     </div>
     <script src="../../shared/sl-api.js?v=19"></script>
-    <script src="game.js?v=3"></script>
+    <script src="game.js?v=4"></script>
   </body>
 </html>

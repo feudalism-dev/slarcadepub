@@ -41,6 +41,62 @@
   white-space: pre-wrap;
 }
 
+#game:focus {
+  outline: 1px solid rgba(61, 240, 255, 0.35);
+}
+
+#touch-pad {
+  position: absolute;
+  right: 10px;
+  bottom: 12px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+#touch-pad.hidden {
+  display: none;
+}
+
+.pad-draw,
+.pad-mid,
+.pad-dirs {
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.pad-dirs {
+  flex-direction: column;
+  align-items: center;
+}
+
+#touch-pad button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid rgba(61, 240, 255, 0.45);
+  background: rgba(8, 16, 32, 0.75);
+  color: var(--cyan);
+  font: 700 12px var(--font);
+  touch-action: none;
+  user-select: none;
+}
+
+#touch-pad button:active,
+#touch-pad button.held {
+  background: rgba(61, 240, 255, 0.25);
+  color: #fff;
+}
+
+#pad-slow.held {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
 #overlay {
   position: absolute;
   inset: 0;
