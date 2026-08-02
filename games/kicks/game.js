@@ -464,14 +464,14 @@
     }
     if (!sparx.length) {
       return (
-        "HOLD ↓ / S or drag DOWN into the dark to draw. Sparx come when the top bar empties. Need " +
+        "Walk the white border safely, then hold toward the DARK to cut in and draw. Need " +
         targetPct +
         "%"
       );
     }
     if (fillPct + 0.05 < targetPct) {
       return (
-        "Purple diamonds = Sparx (deadly on borders). Draw loops into dark. Need " +
+        "On borders you're safe from the Qix. Cut into dark to claim. Sparx (purple) hurt on borders. Need " +
         targetPct +
         "%"
       );
@@ -525,12 +525,12 @@
     overlayTitle.textContent = "KICKS";
     instructionsEl.textContent =
       "HOW TO PLAY\n" +
-      "• White diamond = you. Start on the top edge.\n" +
-      "• HOLD Down (↓ / S) or drag downward on the screen into the DARK area to draw a line.\n" +
-      "• Keep holding and swing left/right, then back onto a white edge to claim that area.\n" +
-      "• Top red bar = countdown until purple Sparx appear (they kill you on the borders).\n" +
-      "• Space / BOOST = limited fast draw. All-slow claims score 2×.\n" +
-      "Goal: fill the FILL % shown before you run out of lives.";
+      "• Walk the white borders freely (safe from the Qix) — left/right/around as you like.\n" +
+      "• When ready, hold toward the DARK (into the open field) to start drawing a line.\n" +
+      "• From the top edge that means Down; from a side edge it means toward the middle.\n" +
+      "• Close the line back onto any white border to claim that area and reveal the image.\n" +
+      "• Top red bar = when purple Sparx appear (dangerous on borders). Space = boost.\n" +
+      "Goal: reach the FILL % target.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -884,7 +884,7 @@
     px = Math.floor(COLS / 2);
     py = 0;
     invuln = 180;
-    banner = "HOLD ↓ or drag DOWN into the dark";
+    banner = "Walk the border, then cut into the dark";
     bannerT = 120;
   }
 
@@ -1281,7 +1281,7 @@
         ctx.fill();
         ctx.font = "bold 11px Segoe UI, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("DRAW", cc.x + coach.x * 36, cc.y + coach.y * 36 + 4);
+        ctx.fillText("CUT IN", cc.x + coach.x * 38, cc.y + coach.y * 38 + 4);
       }
     }
 
@@ -1370,9 +1370,9 @@
     updateHud();
     beginReady(
       "LEVEL " + level,
-      "Hold ↓ into the dark to draw. Claim " +
+      "Walk borders, then cut into the dark to draw. Claim " +
         targetPct +
-        "% before Sparx (top bar). Space = boost. ×" +
+        "%. Sparx = top bar. Space = boost. ×" +
         scoreMult
     );
   }
@@ -1850,7 +1850,7 @@
           setTouchPadVisible(true);
           invuln = 180;
           grabFocus();
-          banner = "HOLD ↓ or drag DOWN into the dark";
+          banner = "Walk the border, then cut into the dark";
           bannerT = 160;
         } else if (readyTimer < 40) {
           overlayTitle.textContent = "GO!";
