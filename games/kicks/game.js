@@ -589,11 +589,19 @@
   }
 
   function resetSparx() {
+    // Classic Qix: a slow pair starts on the border; timer adds more later.
     sparx = [];
     superSparx = false;
     sparxUnlocked = true;
-    // First pair after a short grace so you can leave the spawn edge
-    sparxTimerMax = Math.max(8 * 60, 14 * 60 - level * 30);
+    spawnSparxPair();
+    // Stagger so they don't both rush the spawn corner on frame 1
+    if (sparx[0]) {
+      sparx[0].cool = 30;
+    }
+    if (sparx[1]) {
+      sparx[1].cool = 45;
+    }
+    sparxTimerMax = Math.max(20 * 60, SPARX_TIMER_MAX - level * 60);
     sparxTimer = sparxTimerMax;
   }
 
@@ -604,16 +612,9 @@
       }
       return "Keep moving — close your line on a white border to claim";
     }
-    if (!sparx.length) {
-      return (
-        "Walk borders, cut into dark to claim. Sparx arrive when the bottom bar empties. Need " +
-        targetPct +
-        "%"
-      );
-    }
     if (fillPct + 0.05 < targetPct) {
       return (
-        "On borders you're safe from the Qix. Sparx (purple) hurt on borders. Need " +
+        "Two Sparx patrol borders (slow at first). Cut into dark to claim. Need " +
         targetPct +
         "%"
       );
@@ -673,7 +674,7 @@
       "• When ready, hold toward the DARK (into the open field) to start drawing a line.\n" +
       "• From the top edge that means Down; from a side edge it means toward the middle.\n" +
       "• Close the line back onto any white border to claim that area and reveal the image.\n" +
-      "• Bottom red bar = when purple Sparx appear (slow at first; deadly on borders).\n" +
+      "• Two purple Sparx start on the borders (slow at first). Bottom bar adds more.\n" +
       "• Space = boost. After a clear, view the full image then tap NEXT LEVEL.\n" +
       "Goal: reach the FILL % target.";
     endHintEl.textContent = "";
@@ -1290,12 +1291,9 @@
         banner = "SUPER SPARX!";
         bannerT = 100;
       } else {
-        var hadSparx = sparx.length > 0;
         spawnSparxPair();
-        if (!hadSparx) {
-          banner = "SPARX! Purple dots on the border — avoid them";
-          bannerT = 140;
-        }
+        banner = "MORE SPARX!";
+        bannerT = 100;
       }
     }
     for (qi = 0; qi < sparx.length; qi++) {
@@ -1549,7 +1547,7 @@
     ctx.font = "bold 9px Segoe UI, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(
-      sparx.length ? "NEXT SPARX" : "SPARX ARRIVE WHEN EMPTY",
+      sparx.length >= 4 ? "SUPER SPARX SOON" : "NEXT SPARX PAIR",
       WORLD * 0.5,
       meterY + 5
     );
@@ -1598,7 +1596,7 @@
       "LEVEL " + level,
       "Walk borders, then cut into the dark to draw. Claim " +
         targetPct +
-        "%. Sparx = top bar. Space = boost. ×" +
+        "%. Two Sparx on borders; bar adds more. Space = boost. ×" +
         scoreMult
     );
   }
