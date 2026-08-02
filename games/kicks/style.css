@@ -140,6 +140,15 @@
   text-align: center;
 }
 
+#instructions {
+  white-space: pre-line;
+  text-align: left;
+  line-height: 1.45;
+  max-width: 36em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 #player-line {
   color: var(--text);
 }

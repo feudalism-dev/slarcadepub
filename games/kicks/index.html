@@ -19,7 +19,7 @@
         background: #04060e;
       }
     </style>
-    <link rel="stylesheet" href="style.css?v=2" />
+    <link rel="stylesheet" href="style.css?v=3" />
   </head>
   <body>
     <div id="app">
@@ -32,11 +32,11 @@
             <button type="button" id="pad-fast" data-key="fast">FAST</button>
           </div>
           <div class="pad-dirs">
-            <button type="button" class="pad-btn" id="pad-up" data-dir="up">â–²</button>
+            <button type="button" class="pad-btn" id="pad-up" data-dir="up">▲</button>
             <div class="pad-mid">
-              <button type="button" class="pad-btn" id="pad-left" data-dir="left">â—€</button>
-              <button type="button" class="pad-btn" id="pad-down" data-dir="down">â–¼</button>
-              <button type="button" class="pad-btn" id="pad-right" data-dir="right">â–¶</button>
+              <button type="button" class="pad-btn" id="pad-left" data-dir="left">◀</button>
+              <button type="button" class="pad-btn" id="pad-down" data-dir="down">▼</button>
+              <button type="button" class="pad-btn" id="pad-right" data-dir="right">▶</button>
             </div>
           </div>
         </div>
@@ -44,14 +44,17 @@
           <div>
             <h1 id="overlay-title">KICKS</h1>
             <p id="instructions">
-              Click the game once for keyboard focus (or use the on-screen pad).
-              Arrows/WASD move. Hold Z=slow draw (2Ã—), X=fast draw. Close a
-              loop on the border â€” the side without the Qix fills.
+              HOW TO PLAY
+              1) Without SLOW/FAST you only walk the white borders.
+              2) HOLD SLOW (Z) or FAST (X), then HOLD arrows into the dark area to draw a line.
+              3) Keep holding until the line touches a border again — that loop fills and reveals the image.
+              4) Repeat until FILL hits the target %. Avoid the spinning Qix while drawing.
+              Tip: hold keys (don't tap). On-screen pad works the same.
             </p>
-            <p id="player-line">Player: â€¦</p>
+            <p id="player-line">Player: …</p>
             <div id="start-scores" class="start-scores">
-              <p id="personal-score">Your top score: â€”</p>
-              <p id="high-score">High score: â€”</p>
+              <p id="personal-score">Your top score: —</p>
+              <p id="high-score">High score: —</p>
             </div>
             <div id="scores-unavailable" class="hidden"></div>
             <div id="game-messages"></div>
@@ -74,6 +77,6 @@
       </div>
     </div>
     <script src="../../shared/sl-api.js?v=20"></script>
-    <script src="game.js?v=5"></script>
+    <script src="game.js?v=6"></script>
   </body>
 </html>

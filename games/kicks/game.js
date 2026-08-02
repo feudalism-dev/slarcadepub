@@ -72,6 +72,8 @@
   var fuseIndex = 0;
   var moveCool = 0;
   var invuln = 0;
+  var fuseIdle = 0;
+  var FUSE_GRACE = 22;
 
   var qixes = [];
   var sparx = [];
@@ -427,6 +429,20 @@
     spawnSparxPair();
   }
 
+  function playTip() {
+    if (drawing) {
+      return "HOLD arrows — close your line back to a white border (don't stop)";
+    }
+    if (fillPct + 0.05 < targetPct) {
+      return (
+        "Walk white borders, then HOLD SLOW/Z + arrows into dark space. Need " +
+        targetPct +
+        "% fill"
+      );
+    }
+    return "Target reached — finishing level…";
+  }
+
   function updateHud() {
     hud.textContent =
       "SCORE " +
@@ -444,7 +460,8 @@
       "%   ×" +
       scoreMult +
       (drawing ? (drawSlow ? "   SLOW DRAW" : "   FAST DRAW") : "   SAFE") +
-      "\nClick game for keys, or use on-screen pad (SLOW/FAST + arrows)" +
+      "\n" +
+      playTip() +
       (bannerT > 0 ? "\n" + banner : "");
   }
 
@@ -469,7 +486,12 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "KICKS";
     instructionsEl.textContent =
-      "Click the game for keyboard focus, or use the on-screen pad. Arrows/WASD move. Hold Z or SLOW for 2× draw; X or FAST for quick draw. Close loops away from the Qix.";
+      "HOW TO PLAY\n" +
+      "1) Without SLOW/FAST you only walk the white borders.\n" +
+      "2) HOLD SLOW (Z) or FAST (X), then HOLD arrows into the dark area to draw a line.\n" +
+      "3) Keep holding until the line touches a border again — that loop fills and reveals the image.\n" +
+      "4) Repeat until FILL hits the target %. Avoid the spinning Qix while drawing.\n" +
+      "Tip: hold keys (don't tap). On-screen pad works the same.";
     endHintEl.textContent = "";
     btnStart.disabled = false;
     btnStart.textContent = "START";
@@ -526,7 +548,7 @@
   }
 
   function tryMove(dx, dy) {
-    if (moveCool > 0 || invuln > 0) {
+    if (moveCool > 0) {
       return;
     }
     var nx = px + dx;
@@ -594,8 +616,9 @@
       stix.push({ x: nx, y: ny });
       px = nx;
       py = ny;
-      moveCool = drawSlow ? 5 : 2;
+      moveCool = drawSlow ? 3 : 2;
       fuseOn = false;
+      fuseIdle = 0;
       return;
     }
 
@@ -605,6 +628,7 @@
       py = ny;
       completeClaim();
       moveCool = 3;
+      fuseIdle = 0;
     }
   }
 
@@ -723,12 +747,19 @@
       highScore = score;
     }
     checkLifeBonus();
-    banner = "+" + pts + (stixAllSlow ? " SLOW" : " FAST");
-    bannerT = 90;
+    banner =
+      "+" +
+      pts +
+      (stixAllSlow ? " SLOW" : " FAST") +
+      " — keep claiming until " +
+      targetPct +
+      "%";
+    bannerT = 110;
 
     drawing = false;
     stix = [];
     fuseOn = false;
+    fuseIdle = 0;
     fillPct = calcFillPct();
     updateHud();
 
@@ -988,8 +1019,17 @@
     }
     if (dx || dy) {
       tryMove(dx, dy);
+      if (drawing) {
+        fuseIdle = 0;
+      }
     } else if (drawing) {
-      fuseOn = true;
+      // Brief pause is OK (keyboard/CEF stutter); fuse starts after grace.
+      fuseIdle++;
+      if (fuseIdle >= FUSE_GRACE) {
+        fuseOn = true;
+      }
+    } else {
+      fuseIdle = 0;
     }
 
     if (fuseOn && drawing) {
@@ -999,6 +1039,7 @@
       }
     } else if (!drawing) {
       fuseIndex = 0;
+      fuseIdle = 0;
     }
 
     var qi;
@@ -1234,7 +1275,10 @@
     updateHud();
     beginReady(
       "LEVEL " + level,
-      "Claim " + targetPct + "% — Z slow / X fast draw. Multiplier ×" + scoreMult
+      "Goal: fill " +
+        targetPct +
+        "% of the dark area. HOLD SLOW/Z + arrows to draw loops from the white border. Multiplier ×" +
+        scoreMult
     );
   }
 
