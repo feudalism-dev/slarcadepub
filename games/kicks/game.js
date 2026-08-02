@@ -564,34 +564,18 @@
     return best;
   }
 
-  function pickRespawnCell() {
-    // Prefer a wall that still borders open territory (the "live" edge).
-    var shore = [];
-    var outer = [];
-    var x;
-    var y;
-    for (y = 0; y < ROWS; y++) {
-      for (x = 0; x < COLS; x++) {
-        if (!isWalkable(x, y)) {
-          continue;
-        }
-        if (
-          isOpen(x + 1, y) ||
-          isOpen(x - 1, y) ||
-          isOpen(x, y + 1) ||
-          isOpen(x, y - 1)
-        ) {
-          shore.push({ x: x, y: y });
-        } else {
-          outer.push({ x: x, y: y });
-        }
-      }
+  function pickRespawnCell(fromX, fromY, lineStart) {
+    // Classic: return to the border cell where the cut began.
+    if (lineStart && isWalkable(lineStart.x, lineStart.y)) {
+      return { x: lineStart.x, y: lineStart.y };
     }
-    var pool = shore.length ? shore : outer;
-    if (!pool.length) {
-      return { x: Math.floor(COLS / 2), y: 0 };
+    if (fromX == null) {
+      fromX = px;
     }
-    return pool[(Math.random() * pool.length) | 0];
+    if (fromY == null) {
+      fromY = py;
+    }
+    return nearestWalkable(fromX, fromY);
   }
 
   function sanitizePlayer() {
@@ -1162,7 +1146,7 @@
     fuseIdle = 0;
     fillPct = calcFillPct();
     if (!isWalkable(px, py)) {
-      var edge = pickRespawnCell();
+      var edge = nearestWalkable(px, py);
       px = edge.x;
       py = edge.y;
     }
@@ -1210,6 +1194,9 @@
     if (invuln > 0 || phase !== PHASE_PLAYING) {
       return;
     }
+    var deathX = px;
+    var deathY = py;
+    var lineStart = stix.length ? { x: stix[0].x, y: stix[0].y } : null;
     // Clear stix
     var i;
     for (i = 0; i < field.length; i++) {
@@ -1228,8 +1215,8 @@
       gameOver();
       return;
     }
-    // Respawn on a remaining wall that still borders open space
-    var spawn = pickRespawnCell();
+    // Prefer line start; else nearest shore to where we died (not random).
+    var spawn = pickRespawnCell(deathX, deathY, lineStart);
     px = spawn.x;
     py = spawn.y;
     invuln = 180;
@@ -1613,21 +1600,44 @@
       drawQix(qixes[y]);
     }
 
-    // Sparx
+    // Sparx — large high-contrast diamonds on the borders
     for (x = 0; x < sparx.length; x++) {
       var sp = sparx[x];
       var sc = cellCenter(sp.x, sp.y);
-      ctx.fillStyle = sp.super ? "#ff4d6d" : "#a78bfa";
-      ctx.shadowColor = ctx.fillStyle;
-      ctx.shadowBlur = 10;
+      var sr = sp.super ? 11 : 9;
+      var scol = sp.super ? "#ff2d55" : "#d4b4ff";
+      var sglow = sp.super ? "#ff6b88" : "#f0e6ff";
+      ctx.save();
+      ctx.shadowColor = sglow;
+      ctx.shadowBlur = 18;
+      // Dark outline for contrast on light claimed edges
+      ctx.fillStyle = "#12081c";
       ctx.beginPath();
-      ctx.moveTo(sc.x, sc.y - 4);
-      ctx.lineTo(sc.x + 4, sc.y);
-      ctx.lineTo(sc.x, sc.y + 4);
-      ctx.lineTo(sc.x - 4, sc.y);
+      ctx.moveTo(sc.x, sc.y - sr - 2);
+      ctx.lineTo(sc.x + sr + 2, sc.y);
+      ctx.lineTo(sc.x, sc.y + sr + 2);
+      ctx.lineTo(sc.x - sr - 2, sc.y);
       ctx.closePath();
       ctx.fill();
+      ctx.fillStyle = scol;
+      ctx.beginPath();
+      ctx.moveTo(sc.x, sc.y - sr);
+      ctx.lineTo(sc.x + sr, sc.y);
+      ctx.lineTo(sc.x, sc.y + sr);
+      ctx.lineTo(sc.x - sr, sc.y);
+      ctx.closePath();
+      ctx.fill();
+      // Hot core
       ctx.shadowBlur = 0;
+      ctx.fillStyle = sp.super ? "#ffe0e8" : "#ffffff";
+      ctx.beginPath();
+      ctx.moveTo(sc.x, sc.y - sr * 0.35);
+      ctx.lineTo(sc.x + sr * 0.35, sc.y);
+      ctx.lineTo(sc.x, sc.y + sr * 0.35);
+      ctx.lineTo(sc.x - sr * 0.35, sc.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     }
 
     // Coach: pulse arrow into open space when SAFE on an edge
