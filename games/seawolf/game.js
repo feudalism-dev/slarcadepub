@@ -46,6 +46,9 @@
   var RELOAD_FRAMES = 95;
   var TORPEDO_SPEED = 4.2;
   var PATROL_SECONDS = 90;
+  var TIME_BONUS_SECONDS = 20;
+  // Classic cabinets often gave +20s at 2000; we chain higher goals for longer patrols.
+  var TIME_BONUS_THRESHOLDS = [2000, 4000, 7000, 11000, 16000];
   var MAX_HULL = 3;
   var AIM_MIN = 40;
   var AIM_MAX = W - 40;
@@ -77,6 +80,7 @@
   var frame = 0;
   var readyTimer = 0;
   var patrolFramesLeft = 0;
+  var nextTimeBonusIndex = 0;
   var hull = MAX_HULL;
   var lastLeaderboardData = null;
 
@@ -281,7 +285,7 @@
       if (!audioEnabled || phase !== PHASE_PLAYING) return;
       playSonarPing();
       // Rate increases as time runs out
-      var timeRatio = patrolFramesLeft / (PATROL_SECONDS * 60);
+      var timeRatio = Math.max(0, Math.min(1, patrolFramesLeft / (PATROL_SECONDS * 60)));
       var rate = sonarBaseRate - (sonarBaseRate - sonarMinRate) * (1 - timeRatio);
       sonarPingInterval = setTimeout(ping, rate * 1000);
     };
@@ -440,9 +444,30 @@
     floatScores.push({
       x: x,
       y: y,
-      text: "+" + pts,
+      text: typeof pts === "string" ? pts : "+" + pts,
       life: 48,
     });
+  }
+
+  function checkTimeBonus() {
+    while (
+      nextTimeBonusIndex < TIME_BONUS_THRESHOLDS.length &&
+      score >= TIME_BONUS_THRESHOLDS[nextTimeBonusIndex]
+    ) {
+      var threshold = TIME_BONUS_THRESHOLDS[nextTimeBonusIndex];
+      nextTimeBonusIndex += 1;
+      patrolFramesLeft += TIME_BONUS_SECONDS * 60;
+      spawnFloatScore(
+        W * 0.5,
+        HORIZON_Y - 72,
+        "+" + TIME_BONUS_SECONDS + "s TIME (" + threshold + ")"
+      );
+      var ctx = ensureAudioContext();
+      if (ctx) {
+        playTone(880, 0.12, "square", 0.12);
+        playTone(1175, 0.16, "square", 0.1, ctx.currentTime + 0.1);
+      }
+    }
   }
 
   function hitTestShip(torp, ship) {
@@ -516,6 +541,7 @@
             if (score > sessionHigh) {
               sessionHigh = score;
             }
+            checkTimeBonus();
             spawnExplosion(ship.x, ship.y - ship.h * 0.4, 34, COL_BLAST);
             spawnFloatScore(ship.x, ship.y - 24, ship.score);
             playExplosion(false);
@@ -607,6 +633,7 @@
       // Bonus for completing wave
       score += 500 * currentWave;
       spawnFloatScore(W * 0.5, HORIZON_Y - 40, "WAVE BONUS +" + (500 * currentWave));
+      checkTimeBonus();
       playExplosion(false);
       return;
     }
@@ -1562,6 +1589,7 @@
     aimX = W * 0.5;
     hull = MAX_HULL;
     patrolFramesLeft = PATROL_SECONDS * 60;
+    nextTimeBonusIndex = 0;
     currentWave = 1;
     waveShipsRemaining = getWaveFormation(1).length;
     waveComplete = false;
