@@ -646,10 +646,13 @@
 
   function updatePlaying() {
     frame += 1;
-    patrolFramesLeft -= 1;
-    if (patrolFramesLeft <= 0) {
-      gameOver("time");
-      return;
+    // Freeze clock during inter-wave break (celebration / next-wave setup)
+    if (interWaveDelay <= 0) {
+      patrolFramesLeft -= 1;
+      if (patrolFramesLeft <= 0) {
+        gameOver("time");
+        return;
+      }
     }
     updateAimFromKeys();
     updateTubes();
