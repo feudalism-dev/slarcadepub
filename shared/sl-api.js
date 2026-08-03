@@ -317,7 +317,19 @@
         unavailableMessage: SCORES_UNAVAILABLE_MSG,
       });
     }
-    return jsonp(apiBase, apiParams({ action: "leaderboard" }), 20000);
+    function attempt(triesLeft) {
+      return jsonp(apiBase, apiParams({ action: "leaderboard" }), 20000).then(function (data) {
+        if (data && data.error === "busy" && triesLeft > 0) {
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve(attempt(triesLeft - 1));
+            }, 400);
+          });
+        }
+        return data;
+      });
+    }
+    return attempt(5);
   }
 
   function submitScore(score) {
