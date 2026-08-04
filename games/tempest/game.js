@@ -908,6 +908,8 @@
     phase = PHASE_OVER;
     running = false;
     firing = false;
+    keysLeft = false;
+    keysRight = false;
     setPlayingPointer(false);
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "GAME OVER";
@@ -1067,6 +1069,8 @@
     phase = PHASE_MENU;
     running = false;
     firing = false;
+    keysLeft = false;
+    keysRight = false;
     showMenuOverlay();
     refreshLeaderboard();
   });
