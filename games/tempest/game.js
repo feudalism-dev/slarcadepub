@@ -3,8 +3,8 @@
  * Fan recreation for educational / arcade use. Tempest is a trademark of Atari.
  *
  * Controls:
- *   Mouse move L/R — rotate (left = CW, right = CCW)
- *   Mouse button / Space — fire
+ *   ←/→ or A/D (hold) — move (left = CW, right = CCW)
+ *   Space or mouse button — fire
  *   Z — Superzapper (full clear once per level, then one random)
  *   Esc — quit to menu
  */
@@ -59,7 +59,9 @@
   var fireCooldown = 0;
   var zapCharges = 2;
   var invuln = 0;
-  var mouseSegAccel = 0;
+  var keysLeft = false;
+  var keysRight = false;
+  var MOVE_SPEED = 0.18; // lanes per frame while held
 
   var tube = null;
   var playerSeg = 0;
@@ -345,7 +347,8 @@
     fireCooldown = 0;
     zapCharges = 2;
     invuln = 45;
-    mouseSegAccel = 0;
+    keysLeft = false;
+    keysRight = false;
   }
 
   function beginReady(title, text) {
@@ -514,12 +517,16 @@
   }
 
   function updatePlayerMotion() {
-    // Soften mouse accel into lane position
-    playerSegF += mouseSegAccel;
-    mouseSegAccel *= 0.72;
-    if (Math.abs(mouseSegAccel) < 0.001) {
-      mouseSegAccel = 0;
+    var step = 0;
+    if (keysLeft) {
+      // Left / A = clockwise
+      step += MOVE_SPEED;
     }
+    if (keysRight) {
+      // Right / D = counterclockwise
+      step -= MOVE_SPEED;
+    }
+    playerSegF += step;
     if (tube.closed) {
       playerSegF = wrapSeg(playerSegF, tube.segments);
     } else {
@@ -794,7 +801,7 @@
     overlay.classList.remove("hidden");
     overlayTitle.textContent = "TEMPEST";
     instructionsEl.textContent =
-      "Move mouse left/right to rotate (left = clockwise, right = counterclockwise). Click to fire. Z = Superzapper.";
+      "Hold ←/→ or A/D to move (left = clockwise, right = counterclockwise). Space or click to fire. Z = Superzapper.";
     btnStart.textContent = "START";
     btnStart.disabled = false;
     setOverlayButtons(true, false);
@@ -980,24 +987,6 @@
     requestAnimationFrame(loop);
   }
 
-  function onPointerMove(e) {
-    if (phase !== PHASE_PLAYING || !tube) {
-      return;
-    }
-    var rect = canvas.getBoundingClientRect();
-    var x = (e.clientX - rect.left) / Math.max(1, rect.width);
-    x = clamp(x, 0, 1);
-    var maxSeg = tube.closed ? tube.segments : Math.max(1, tube.segments - 2);
-    // Left side of screen = clockwise (higher segment), right = counterclockwise.
-    var target = (1 - x) * maxSeg;
-    playerSegF = lerp(playerSegF, target, 0.45);
-    // Optional fine nudge from movement delta when available
-    if (e.movementX) {
-      mouseSegAccel += (-e.movementX) * 0.02;
-      mouseSegAccel = clamp(mouseSegAccel, -0.8, 0.8);
-    }
-  }
-
   function onPointerDown(e) {
     if (phase !== PHASE_PLAYING) {
       return;
@@ -1014,7 +1003,6 @@
     }
   }
 
-  canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerdown", onPointerDown);
   window.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("contextmenu", function (e) {
@@ -1026,9 +1014,19 @@
       phase = PHASE_MENU;
       running = false;
       firing = false;
+      keysLeft = false;
+      keysRight = false;
       showMenuOverlay();
       refreshLeaderboard();
       return;
+    }
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+      keysLeft = true;
+      e.preventDefault();
+    }
+    if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+      keysRight = true;
+      e.preventDefault();
     }
     if (phase !== PHASE_PLAYING) {
       return;
@@ -1041,15 +1039,15 @@
     if (e.key === "z" || e.key === "Z") {
       doZap();
     }
-    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
-      mouseSegAccel += 0.55;
-    }
-    if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
-      mouseSegAccel -= 0.55;
-    }
   });
 
   window.addEventListener("keyup", function (e) {
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+      keysLeft = false;
+    }
+    if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+      keysRight = false;
+    }
     if (e.key === " " || e.code === "Space") {
       firing = false;
     }
