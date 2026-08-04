@@ -47,8 +47,9 @@
   var TORPEDO_SPEED = 4.2;
   var PATROL_SECONDS = 90;
   var TIME_BONUS_SECONDS = 20;
-  // Classic cabinets often gave +20s at 2000; we chain higher goals for longer patrols.
-  var TIME_BONUS_THRESHOLDS = [2000, 4000, 7000, 11000, 16000];
+  // Steeper goals so wave completion bonuses alone can't chain infinite time.
+  // Rough pace: 1st ~mid wave 2–3, then every few waves of real sinks.
+  var TIME_BONUS_THRESHOLDS = [2500, 6000, 11000, 18000, 27000];
   var MAX_HULL = 3;
   var AIM_MIN = 40;
   var AIM_MAX = W - 40;
