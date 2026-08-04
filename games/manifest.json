@@ -58,6 +58,13 @@
       "status": "available"
     },
     {
+      "id": "tempest",
+      "title": "Tempest",
+      "description": "Snap around the tube rim and blast enemies from the pit — Tempest-style tube shooter.",
+      "url": "games/tempest/",
+      "status": "available"
+    },
+    {
       "id": "kicks",
       "title": "Kicks",
       "description": "Claim territory, dodge the Qix, reveal the image — modern Qix-style arcade.",

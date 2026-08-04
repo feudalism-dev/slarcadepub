@@ -1,0 +1,232 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #020008;
+  color: #e8f4ff;
+  font-family: "Rajdhani", "Segoe UI", sans-serif;
+  position: fixed;
+  inset: 0;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#game-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at center, #12001a 0%, #020008 70%);
+}
+
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  cursor: none;
+}
+
+#game-wrap.playing canvas {
+  pointer-events: auto;
+}
+
+#game-wrap:not(.playing) canvas {
+  pointer-events: none;
+  cursor: default;
+}
+
+#hud {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.55rem;
+  z-index: 1;
+  text-align: center;
+  font-size: clamp(0.75rem, 2.2vw, 0.95rem);
+  letter-spacing: 0.12em;
+  color: #9ad8ff;
+  text-shadow: 0 0 10px rgba(0, 232, 255, 0.35);
+  pointer-events: none;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 0, 8, 0.78);
+  text-align: center;
+  padding: 0.75rem;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+#overlay.hidden {
+  display: none;
+}
+
+#overlay > div {
+  max-width: 30rem;
+}
+
+#overlay h1 {
+  margin: 0 0 0.5rem;
+  font-family: "Orbitron", sans-serif;
+  font-size: clamp(1.25rem, 4.2vw, 2rem);
+  letter-spacing: 0.22em;
+  color: #ff4fd8;
+  text-shadow: 0 0 18px rgba(255, 79, 216, 0.55), 0 0 40px rgba(0, 232, 255, 0.25);
+  font-weight: 700;
+}
+
+#overlay p {
+  margin: 0.35rem 0;
+  font-size: clamp(0.85rem, 2.3vw, 1.05rem);
+  line-height: 1.4;
+  color: #c8e8ff;
+}
+
+#overlay button,
+.modal-panel button {
+  margin-top: 0.75rem;
+  padding: 0.55rem 1.25rem;
+  font-family: "Orbitron", sans-serif;
+  font-size: clamp(0.8rem, 2.4vw, 0.95rem);
+  letter-spacing: 0.12em;
+  border: 2px solid #5ce8ff;
+  background: linear-gradient(180deg, #1a0840, #0a1028);
+  color: #e8ffff;
+  cursor: pointer;
+  box-shadow: 0 0 16px rgba(0, 232, 255, 0.25);
+}
+
+#overlay button.hidden {
+  display: none;
+}
+
+.overlay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.overlay-actions button {
+  margin-top: 0;
+}
+
+#btn-leaderboard {
+  border-color: #ff4fd8;
+  box-shadow: 0 0 16px rgba(255, 79, 216, 0.28);
+}
+
+.start-scores {
+  margin: 0.65rem 0;
+  color: #9ad8ff;
+}
+
+#scores-unavailable {
+  color: #ff8899;
+  font-size: 0.9rem;
+  margin: 0.5rem 0;
+}
+
+#scores-unavailable.hidden,
+.hidden {
+  display: none !important;
+}
+
+#game-messages .msg,
+#game-messages > div {
+  color: #ffe066;
+  margin: 0.2rem 0;
+}
+
+#btn-quit {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 3;
+  padding: 0.35rem 0.7rem;
+  font-family: "Orbitron", sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  border: 1px solid #5ce8ff;
+  background: rgba(10, 16, 40, 0.85);
+  color: #9ad8ff;
+  cursor: pointer;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-panel {
+  width: min(22rem, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 1rem 1.2rem 1.2rem;
+  border: 2px solid #5ce8ff;
+  background: #0a1020;
+  box-shadow: 0 0 28px rgba(255, 79, 216, 0.25);
+}
+
+.modal-panel h2 {
+  margin: 0 0 0.75rem;
+  font-family: "Orbitron", sans-serif;
+  letter-spacing: 0.16em;
+  color: #ff4fd8;
+  font-size: 1rem;
+}
+
+#leaderboard {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+#leaderboard li {
+  display: grid;
+  grid-template-columns: 2.2rem 1fr auto;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(92, 232, 255, 0.18);
+  font-size: 0.95rem;
+}
+
+#leaderboard .rank {
+  color: #ff4fd8;
+}
+
+#leaderboard .score {
+  color: #5ce8ff;
+}
