@@ -19,8 +19,10 @@ https://feudalism-dev.github.io/slarcadepub/games/<id>/
 | `slwars` | SL Wars | `SLWars_Controller.lsl` + `SLWars_Scores.lsl` |
 | `seawolf` | Sea Wolf | `SeaWolf_Controller.lsl` + `SeaWolf_Scores.lsl` |
 | `kicks` | Kicks | `Kicks_Controller.lsl` + `Kicks_Scores.lsl` |
+| `defender` | SL Defender | `Arcade_Controller.lsl` + `Arcade_Scores.lsl` (Phase 0) |
 
-See also: `docs/KICKS.md` for Qix rules, dual notecards, and image reveal.
+See also: `docs/KICKS.md` for Qix rules, dual notecards, and image reveal.  
+Defender design docs: `SL_Defender_Game/DesignSpec/`.
 
 ## Checklist
 

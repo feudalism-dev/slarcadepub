@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>SL Defender</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Source+Sans+3:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html,
+      body,
+      #app {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #050810;
+      }
+    </style>
+    <link rel="stylesheet" href="style.css?v=11" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="game-wrap">
+        <canvas id="game" width="960" height="540"></canvas>
+        <div id="hud"></div>
+        <div id="overlay">
+          <div class="overlay-card">
+            <p class="brand-kicker">SECOND LIFE ARCADE</p>
+            <h1 id="overlay-title">SL DEFENDER</h1>
+            <p id="instructions">
+              WASD/arrows move · Space/Z fire · Shift/X dodge.
+              Scoop one civilian at a time (they dangle under you) · fly low to set them down safely ·
+              too high and they fall. Catch falling humans before they splat. Grab pickups for power spikes.
+            </p>
+            <p id="player-line">Player: …</p>
+            <div id="mode-select" class="mode-select" role="group" aria-label="Difficulty mode">
+              <button type="button" class="mode-btn" data-mode="casual" id="mode-casual">CASUAL</button>
+              <button type="button" class="mode-btn active" data-mode="arcade" id="mode-arcade">ARCADE</button>
+              <button type="button" class="mode-btn" data-mode="hardcore" id="mode-hardcore">HARDCORE</button>
+            </div>
+            <p id="mode-hint" class="mode-hint">Arcade — standard Defender pressure. Scores submit.</p>
+            <div id="start-scores" class="start-scores">
+              <p id="personal-score">Your top score: —</p>
+              <p id="high-score">High score: —</p>
+            </div>
+            <div id="scores-unavailable" class="hidden"></div>
+            <div id="game-messages"></div>
+            <p id="end-hint"></p>
+            <div id="a11y-row" class="a11y-row" role="group" aria-label="Accessibility">
+              <button type="button" id="btn-mute" class="a11y-btn">SOUND ON</button>
+              <button type="button" id="btn-fx" class="a11y-btn">FX FULL</button>
+            </div>
+            <div class="overlay-actions">
+              <button id="btn-start" type="button" onclick="window.DefenderStart && window.DefenderStart()">START</button>
+              <button id="btn-leaderboard" type="button" class="hidden">LEADERBOARD</button>
+              <button id="btn-next" type="button" class="hidden" onclick="window.DefenderStart && window.DefenderStart()">RETRY</button>
+            </div>
+            <p class="art-credit">Ships: OpenGameArt side scroller pack · FX: Kenney.nl (CC0)</p>
+          </div>
+        </div>
+        <button id="btn-quit" type="button" class="hidden" title="Quit game (Esc)">QUIT</button>
+      </div>
+    </div>
+    <div id="leaderboard-modal" class="modal hidden" role="dialog" aria-labelledby="leaderboard-title" aria-modal="true">
+      <div class="modal-panel">
+        <h2 id="leaderboard-title">LEADERBOARD</h2>
+        <ol id="leaderboard"></ol>
+        <button id="btn-modal-close" type="button">CLOSE</button>
+      </div>
+    </div>
+    <script src="../../shared/sl-api.js?v=23"></script>
+    <script src="render/atlas.js?v=9"></script>
+    <script src="render/renderer.js?v=16"></script>
+    <script src="audio.js?v=1"></script>
+    <script src="meta.js?v=1"></script>
+    <script src="game.js?v=17"></script>
+  </body>
+</html>

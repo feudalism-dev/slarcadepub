@@ -70,6 +70,13 @@
       "description": "Claim territory, dodge the Qix, reveal the image — modern Qix-style arcade.",
       "url": "games/kicks/",
       "status": "available"
+    },
+    {
+      "id": "defender",
+      "title": "SL Defender",
+      "description": "Modern Defender-style rescue shooter — fly, fight, save civilians.",
+      "url": "games/defender/",
+      "status": "available"
     }
   ]
 }

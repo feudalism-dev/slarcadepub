@@ -379,6 +379,70 @@
     );
   }
 
+  function loadMeta() {
+    if (!apiBase || !session.token || !scoresForThisGame()) {
+      return Promise.resolve({
+        ok: true,
+        scoresEnabled: false,
+        meta: "",
+        unavailableMessage: SCORES_UNAVAILABLE_MSG,
+      });
+    }
+    function attempt(triesLeft) {
+      return jsonp(
+        apiBase,
+        apiParams({
+          action: "load_meta",
+          token: session.token,
+        }),
+        20000
+      ).then(function (data) {
+        if (data && data.error === "busy" && triesLeft > 0) {
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve(attempt(triesLeft - 1));
+            }, 400);
+          });
+        }
+        return data;
+      });
+    }
+    return attempt(5);
+  }
+
+  function persistMeta(metaWire) {
+    if (!apiBase || !session.token || !scoresForThisGame()) {
+      return Promise.resolve({
+        ok: true,
+        saved: false,
+        scoresEnabled: false,
+        meta: metaWire || "",
+        unavailableMessage: SCORES_UNAVAILABLE_MSG,
+      });
+    }
+    function attempt(triesLeft, delay) {
+      return jsonp(
+        apiBase,
+        apiParams({
+          action: "persist_meta",
+          token: session.token,
+          meta: metaWire,
+        }),
+        20000
+      ).then(function (data) {
+        if (data && (data.error === "busy" || data.error === "rate_limit") && triesLeft > 0) {
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve(attempt(triesLeft - 1, delay * 2));
+            }, delay);
+          });
+        }
+        return data;
+      });
+    }
+    return attempt(3, 500);
+  }
+
   global.SLArcade = {
     SCORES_UNAVAILABLE_MSG: SCORES_UNAVAILABLE_MSG,
     listenForSession: listenForSession,
@@ -394,6 +458,8 @@
     getLeaderboard: getLeaderboard,
     submitScore: submitScore,
     endSession: endSession,
+    loadMeta: loadMeta,
+    persistMeta: persistMeta,
     initFromMoapUrl: initFromMoapUrl,
   };
 
