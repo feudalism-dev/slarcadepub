@@ -85,6 +85,14 @@
   var CARRY_SAFE_BOTTOM = GROUND_Y - 38;
   var FALL_GRAVITY = 560;
 
+  /** Viewport width/height (canvas). Entity X lives in [0, MAP_W). */
+  var VIEW_W = W;
+  var VIEW_H = H;
+  var WORLD_SCREENS = 10;
+  var MAP_W = W * WORLD_SCREENS;
+  /** Camera left edge in world X (player-centered with wrap). */
+  var camX = 0;
+
   var PHASE_MENU = "menu";
   var PHASE_PLAYING = "playing";
   var PHASE_OVER = "gameOver";
@@ -355,14 +363,149 @@
     return a + (b - a) * t;
   }
 
+  function wrapX(x) {
+    x = x % MAP_W;
+    if (x < 0) {
+      x += MAP_W;
+    }
+    return x;
+  }
+
+  /** Shortest signed delta from a → b on the torus. */
+  function wrapDelta(a, b) {
+    var d = (b - a) % MAP_W;
+    if (d > MAP_W * 0.5) {
+      d -= MAP_W;
+    }
+    if (d < -MAP_W * 0.5) {
+      d += MAP_W;
+    }
+    return d;
+  }
+
+  /** Off-camera spawn just outside the current view. side -1=left, +1=right. */
+  function edgeSpawnX(side) {
+    if (side < 0) {
+      return wrapX(camX - 40);
+    }
+    return wrapX(camX + VIEW_W + 40);
+  }
+
+  /** Random X near the player (within ~2 screens). */
+  function nearPlayerX(spread) {
+    if (spread == null) {
+      spread = VIEW_W * 2;
+    }
+    return wrapX(player.x + rand(-spread, spread));
+  }
+
+  /** Random X anywhere on the map. */
+  function anyMapX() {
+    return rand(0, MAP_W);
+  }
+
+  function updateCamera() {
+    camX = wrapX(player.x + player.w * 0.5 - VIEW_W * 0.5);
+    scrollX = camX;
+  }
+
   function aabb(ax, ay, aw, ah, bx, by, bw, bh) {
-    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    var dx = wrapDelta(ax + aw * 0.5, bx + bw * 0.5);
+    var bx2 = ax + aw * 0.5 + dx - bw * 0.5;
+    return ax < bx2 + bw && ax + aw > bx2 && ay < by + bh && ay + ah > by;
   }
 
   function dist2(ax, ay, bx, by) {
-    var dx = ax - bx;
+    var dx = wrapDelta(ax, bx);
     var dy = ay - by;
     return dx * dx + dy * dy;
+  }
+
+  function seedMapCivilians(count) {
+    var i;
+    var n = count || 12;
+    for (i = 0; i < n; i++) {
+      var cx = ((i + 0.5) / n) * MAP_W + rand(-40, 40);
+      if (Math.random() < 0.45) {
+        spawnCivilianCluster(wrapX(cx));
+      } else {
+        civilians.push({
+          id: uid(),
+          x: wrapX(cx),
+          y: GROUND_Y - CIV_H,
+          w: 16,
+          h: 24,
+          state: "idle",
+          panic: 0,
+          vx: rand(-25, 25),
+          vy: 0,
+          carriedBy: 0,
+        });
+      }
+    }
+  }
+
+  function drawRadar() {
+    var rw = Math.min(420, VIEW_W * 0.55);
+    var rh = 44;
+    var rx = (VIEW_W - rw) * 0.5;
+    var ry = VIEW_H - rh - 10;
+    var ctx2 = canvas.getContext("2d");
+    ctx2.save();
+    ctx2.globalAlpha = 0.92;
+    ctx2.fillStyle = "rgba(4, 10, 18, 0.78)";
+    ctx2.strokeStyle = "rgba(120, 200, 240, 0.55)";
+    ctx2.lineWidth = 1.5;
+    ctx2.beginPath();
+    ctx2.rect(rx, ry, rw, rh);
+    ctx2.fill();
+    ctx2.stroke();
+    ctx2.fillStyle = "rgba(110, 143, 168, 0.95)";
+    ctx2.font = "9px Orbitron, sans-serif";
+    ctx2.textAlign = "left";
+    ctx2.fillText("RADAR", rx + 6, ry + 11);
+    var viewW = (VIEW_W / MAP_W) * rw;
+    var viewX = rx + (camX / MAP_W) * rw;
+    ctx2.fillStyle = "rgba(80, 180, 255, 0.12)";
+    ctx2.strokeStyle = "rgba(100, 200, 255, 0.35)";
+    if (viewX + viewW <= rx + rw) {
+      ctx2.fillRect(viewX, ry + 14, viewW, rh - 18);
+      ctx2.strokeRect(viewX, ry + 14, viewW, rh - 18);
+    } else {
+      var first = rx + rw - viewX;
+      ctx2.fillRect(viewX, ry + 14, first, rh - 18);
+      ctx2.strokeRect(viewX, ry + 14, first, rh - 18);
+      ctx2.fillRect(rx, ry + 14, viewW - first, rh - 18);
+      ctx2.strokeRect(rx, ry + 14, viewW - first, rh - 18);
+    }
+    function blip(wx, color, size) {
+      var px = rx + (wrapX(wx) / MAP_W) * rw;
+      var py = ry + rh * 0.62;
+      ctx2.fillStyle = color;
+      ctx2.fillRect(px - size * 0.5, py - size * 0.5, size, size);
+    }
+    var i;
+    for (i = 0; i < civilians.length; i++) {
+      var c = civilians[i];
+      if (c.state === "rescued") {
+        continue;
+      }
+      blip(c.x + c.w * 0.5, c.state === "falling" || c.panic > 0 ? "#ff8866" : "#88ffaa", 3);
+    }
+    for (i = 0; i < enemies.length; i++) {
+      blip(enemies[i].x + enemies[i].w * 0.5, "#ff4466", 3);
+    }
+    for (i = 0; i < hazards.length; i++) {
+      blip(hazards[i].x + hazards[i].w * 0.5, "#ffcc44", 2);
+    }
+    if (boss) {
+      blip(boss.x + boss.w * 0.5, "#ff66ff", 5);
+    }
+    for (i = 0; i < pickups.length; i++) {
+      blip(pickups[i].x, "#66ccff", 2);
+    }
+    blip(player.x + player.w * 0.5, "#ffffff", 4);
+    ctx2.restore();
   }
 
   function hasDef(id) {
@@ -678,7 +821,7 @@
     for (i = 0; i < count; i++) {
       civilians.push({
         id: uid(),
-        x: cx + rand(-30, 30),
+        x: wrapX(cx + rand(-30, 30)),
         y: GROUND_Y - CIV_H,
         w: 16,
         h: 24,
@@ -694,7 +837,7 @@
   function spawnCivilianIsolate() {
     civilians.push({
       id: uid(),
-      x: rand(40, W - 40),
+      x: anyMapX(),
       y: GROUND_Y - CIV_H,
       w: 16,
       h: 24,
@@ -711,7 +854,7 @@
     enemies.push({
       id: uid(),
       type: "grabber",
-      x: side < 0 ? -30 : W + 30,
+      x: edgeSpawnX(side),
       y: rand(80, GROUND_Y - 80),
       w: 40,
       h: 32,
@@ -729,7 +872,7 @@
     enemies.push({
       id: uid(),
       type: "rusher",
-      x: side < 0 ? -24 : W + 24,
+      x: edgeSpawnX(side),
       y: rand(60, GROUND_Y - 100),
       w: 36,
       h: 20,
@@ -745,7 +888,7 @@
     enemies.push({
       id: uid(),
       type: "swimmer",
-      x: side < 0 ? -28 : W + 28,
+      x: edgeSpawnX(side),
       y: GROUND_Y - 40 + rand(-20, 10),
       w: 40,
       h: 22,
@@ -762,7 +905,7 @@
     enemies.push({
       id: uid(),
       type: "lunger",
-      x: side < 0 ? -30 : W + 30,
+      x: edgeSpawnX(side),
       y: rand(100, GROUND_Y - 90),
       w: 36,
       h: 22,
@@ -779,7 +922,7 @@
     enemies.push({
       id: uid(),
       type: "burner",
-      x: side < 0 ? -28 : W + 28,
+      x: edgeSpawnX(side),
       y: rand(70, GROUND_Y - 120),
       w: 38,
       h: 24,
@@ -796,7 +939,7 @@
     enemies.push({
       id: uid(),
       type: "heat_runner",
-      x: side < 0 ? -30 : W + 30,
+      x: edgeSpawnX(side),
       y: GROUND_Y - 22,
       w: 36,
       h: 22,
@@ -812,7 +955,7 @@
     enemies.push({
       id: uid(),
       type: "steam_striker",
-      x: side < 0 ? -30 : W + 30,
+      x: edgeSpawnX(side),
       y: rand(90, GROUND_Y - 90),
       w: 36,
       h: 22,
@@ -829,7 +972,7 @@
     enemies.push({
       id: uid(),
       type: "slicer",
-      x: side < 0 ? -24 : W + 24,
+      x: edgeSpawnX(side),
       y: rand(60, GROUND_Y - 100),
       w: 36,
       h: 22,
@@ -845,7 +988,7 @@
     enemies.push({
       id: uid(),
       type: "mirror_clone",
-      x: W - 60,
+      x: wrapX(camX + VIEW_W - 60),
       y: player.y,
       w: 40,
       h: 24,
@@ -862,7 +1005,7 @@
     enemies.push({
       id: uid(),
       type: "prism_dancer",
-      x: side < 0 ? -28 : W + 28,
+      x: edgeSpawnX(side),
       y: rand(80, GROUND_Y - 100),
       w: 32,
       h: 32,
@@ -879,7 +1022,7 @@
     enemies.push({
       id: uid(),
       type: "mutator",
-      x: side < 0 ? -28 : W + 28,
+      x: edgeSpawnX(side),
       y: rand(100, GROUND_Y - 80),
       w: 36,
       h: 36,
@@ -896,7 +1039,7 @@
     enemies.push({
       id: uid(),
       type: "corruptor",
-      x: side < 0 ? -30 : W + 30,
+      x: edgeSpawnX(side),
       y: rand(80, GROUND_Y - 90),
       w: 40,
       h: 32,
@@ -914,7 +1057,7 @@
     enemies.push({
       id: uid(),
       type: "spore_hulk",
-      x: side < 0 ? -40 : W + 40,
+      x: edgeSpawnX(side),
       y: rand(100, GROUND_Y - 110),
       w: 48,
       h: 40,
@@ -930,7 +1073,7 @@
     enemies.push({
       id: uid(),
       type: "phaser",
-      x: side < 0 ? -28 : W + 28,
+      x: edgeSpawnX(side),
       y: rand(70, GROUND_Y - 100),
       w: 34,
       h: 28,
@@ -946,7 +1089,7 @@
     enemies.push({
       id: uid(),
       type: "blinker",
-      x: rand(80, W - 80),
+      x: nearPlayerX(VIEW_W * 2.5),
       y: rand(60, GROUND_Y - 100),
       w: 30,
       h: 30,
@@ -962,7 +1105,7 @@
     enemies.push({
       id: uid(),
       type: "void_stalker",
-      x: side < 0 ? -30 : W + 30,
+      x: edgeSpawnX(side),
       y: rand(80, GROUND_Y - 90),
       w: 40,
       h: 32,
@@ -1034,7 +1177,7 @@
   }
 
   function spawnFlameJetHazard() {
-    var hx = rand(80, W - 80);
+    var hx = nearPlayerX(VIEW_W * 2.5);
     var hw = 28;
     var hh = 110;
     var hy = GROUND_Y - hh;
@@ -1055,7 +1198,7 @@
   }
 
   function spawnSteamHazard() {
-    var hx = rand(60, W - 60);
+    var hx = nearPlayerX(VIEW_W * 2.5);
     var hy = rand(80, GROUND_Y - 80);
     var hw = 70;
     var hh = 48;
@@ -1079,13 +1222,14 @@
     var hy = rand(70, GROUND_Y - 60);
     var hh = 14;
     var hid = uid();
-    startTelegraph("hazard", hid, "line", 20, hy, W - 40, hh, function () {
+    var lx = wrapX(camX + 20);
+    startTelegraph("hazard", hid, "line", lx, hy, VIEW_W - 40, hh, function () {
       hazards.push({
         id: hid,
         type: "laser",
-        x: 20,
+        x: lx,
         y: hy,
-        w: W - 40,
+        w: VIEW_W - 40,
         h: hh,
         life: 2.4,
         dmgCooldown: 0,
@@ -1095,7 +1239,7 @@
   }
 
   function spawnSporeCloudHazard() {
-    var hx = rand(60, W - 60);
+    var hx = nearPlayerX(VIEW_W * 2.5);
     var hy = rand(70, GROUND_Y - 90);
     var hw = 90;
     var hh = 70;
@@ -1116,7 +1260,7 @@
   }
 
   function spawnGravityWellHazard() {
-    var hx = rand(100, W - 100);
+    var hx = nearPlayerX(VIEW_W * 2);
     var hy = rand(90, GROUND_Y - 100);
     var hw = 80;
     var hh = 80;
@@ -1184,7 +1328,7 @@
   }
 
   function spawnFireHazard() {
-    var hx = rand(60, W - 60);
+    var hx = nearPlayerX(VIEW_W * 2.5);
     var hy = GROUND_Y - 8;
     var hw = 48;
     var hh = 28;
@@ -1205,7 +1349,7 @@
   }
 
   function spawnPuddleHazard() {
-    var hx = rand(60, W - 60);
+    var hx = nearPlayerX(VIEW_W * 2.5);
     var hy = GROUND_Y - 6;
     var hw = 56;
     var hh = 22;
@@ -1307,7 +1451,7 @@
       spawnWorldPickup(
         "defensive",
         pick(DEF_IDS),
-        clamp(player.x + player.facing * 50, 30, W - 30),
+        wrapX(player.x + player.facing * 50),
         player.y,
         10
       );
@@ -1338,7 +1482,7 @@
   }
 
   function depositCivilian(c) {
-    c.x = clamp(player.x + player.w * 0.5 - c.w * 0.5, 10, W - 20);
+    c.x = wrapX(player.x + player.w * 0.5 - c.w * 0.5);
     c.y = GROUND_Y - CIV_H;
     c.vy = 0;
     c.carriedBy = 0;
@@ -1651,7 +1795,12 @@
     var zm = zoneMeta();
     zoneName = zm.name;
     sfx("ui");
-    spawnCivilianCluster(W * 0.6);
+    // Top up survivors across the wraparound map without flooding mid-run
+    if (civilians.length < 8) {
+      seedMapCivilians(12 + zoneIndex);
+    } else {
+      spawnCivilianCluster(anyMapX());
+    }
   }
 
   function bossMaxHp() {
@@ -1668,7 +1817,7 @@
       id: uid(),
       type: zm.bossId,
       name: zm.bossName,
-      x: W * 0.72,
+      x: wrapX(player.x + VIEW_W * 0.35),
       y: H * 0.38,
       w: bossSize(zm.bossId).w,
       h: bossSize(zm.bossId).h,
@@ -1717,7 +1866,7 @@
     if (!boss) {
       return;
     }
-    var cx = clamp(player.x + player.w * 0.5 - 44, 40, W - 100);
+    var cx = wrapX(player.x + player.w * 0.5 - 44);
     var cy = clamp(player.y + player.h * 0.5 - 44, 40, GROUND_Y - 100);
     var size = 96;
     boss.attack = "flame";
@@ -1771,9 +1920,9 @@
       return;
     }
     var spots = [
-      { x: clamp(player.x - 20, 40, W - 80), y: clamp(player.y - 20, 40, GROUND_Y - 80) },
-      { x: clamp(player.x + 80, 40, W - 80), y: clamp(player.y - 60, 40, GROUND_Y - 80) },
-      { x: clamp(player.x - 60, 40, W - 80), y: clamp(player.y + 50, 40, GROUND_Y - 80) },
+      { x: wrapX(player.x - 20), y: clamp(player.y - 20, 40, GROUND_Y - 80) },
+      { x: wrapX(player.x + 80), y: clamp(player.y - 60, 40, GROUND_Y - 80) },
+      { x: wrapX(player.x - 60), y: clamp(player.y + 50, 40, GROUND_Y - 80) },
     ];
     boss.attack = "prism";
     boss.cd = 2.4;
@@ -1796,7 +1945,7 @@
     if (!boss) {
       return;
     }
-    var gx = clamp(player.x - 30, 40, W - 160);
+    var gx = wrapX(player.x - 30);
     var gy = clamp(player.y - 30, 40, GROUND_Y - 160);
     boss.attack = "spore";
     boss.cd = 2.5;
@@ -1842,7 +1991,7 @@
     if (!boss) {
       return;
     }
-    var cx = clamp(player.x + player.w * 0.5 - 50, 40, W - 110);
+    var cx = wrapX(player.x + player.w * 0.5 - 50);
     var cy = clamp(player.y + player.h * 0.5 - 50, 40, GROUND_Y - 110);
     var size = 100;
     boss.attack = "void";
@@ -1859,7 +2008,7 @@
     if (!boss) {
       return;
     }
-    var cx = clamp(player.x - 20, 60, W - 120);
+    var cx = wrapX(player.x - 20);
     var cy = clamp(player.y - 20, 60, GROUND_Y - 120);
     boss.attack = "gravity";
     boss.cd = 2.4;
@@ -1975,7 +2124,7 @@
     if (!boss) {
       return;
     }
-    var cx = clamp(player.x + player.w * 0.5 - 40, 40, W - 100);
+    var cx = wrapX(player.x + player.w * 0.5 - 40);
     var cy = clamp(player.y + player.h * 0.5 - 40, 40, GROUND_Y - 100);
     var size = 88;
     boss.attack = "circle";
@@ -2023,10 +2172,12 @@
     var wh = 50;
     boss.attack = "wave";
     boss.cd = 2.3;
-    startTelegraph("boss", boss.id, "circle", 40, wy, W - 80, wh, function () {
-      bossHitPlayerRect(40, wy, W - 80, wh);
+    var waveX = wrapX(camX + 40);
+    var waveW = VIEW_W - 80;
+    startTelegraph("boss", boss.id, "circle", waveX, wy, waveW, wh, function () {
+      bossHitPlayerRect(waveX, wy, waveW, wh);
       // Mild push upward if hit
-      if (aabb(player.x, player.y, player.w, player.h, 40, wy, W - 80, wh) && player.dodgeTimer <= 0) {
+      if (aabb(player.x, player.y, player.w, player.h, waveX, wy, waveW, wh) && player.dodgeTimer <= 0) {
         player.y = clamp(player.y - 40, 8, GROUND_Y - player.h);
       }
       if (boss) {
@@ -2089,7 +2240,7 @@
       }
       boss.blink -= dt;
       if (boss.blink <= 0) {
-        boss.x = clamp(player.x + rand(-120, 120), W * 0.35, W - boss.w - 20);
+        boss.x = wrapX(player.x + rand(-120, 120));
         boss.y = clamp(player.y + rand(-80, 80), 50, GROUND_Y - boss.h - 30);
         boss.blink = rand(1.4, 2.2);
       } else {
@@ -2100,7 +2251,14 @@
       boss.x += Math.sin(boss.moveT * 1.2) * 50 * dt;
       boss.y += Math.cos(boss.moveT * 0.9) * 35 * dt;
     }
-    boss.x = clamp(boss.x, W * 0.35, W - boss.w - 20);
+    var bdx = wrapDelta(player.x, boss.x);
+    if (bdx > VIEW_W * 0.45) {
+      boss.x = wrapX(player.x + VIEW_W * 0.45);
+    } else if (bdx < -VIEW_W * 0.15) {
+      boss.x = wrapX(player.x - VIEW_W * 0.15);
+    } else {
+      boss.x = wrapX(boss.x);
+    }
     boss.y = clamp(boss.y, 50, GROUND_Y - boss.h - 30);
 
     // Contact damage
@@ -2141,6 +2299,10 @@
       : { tier: 1, maxHpBonus: 0, dodgeMax: DODGE_MAX_BASE, calmStart: false };
     score = 0;
     scrollX = 0;
+    camX = 0;
+    if (R.setMapWidth) {
+      R.setMapWidth(MAP_W);
+    }
     D = m.dStart;
     dTimer = 0;
     rescueStreak = 0;
@@ -2162,8 +2324,9 @@
     spawnHazardTimer = 3;
     spawnRusherTimer = 1.5;
     spawnPickupTimer = 4;
-    player.x = W * 0.2;
+    player.x = MAP_W * 0.1;
     player.y = H * 0.45;
+    updateCamera();
     player.facing = 1;
     player.maxHp = m.hp + bonus.maxHpBonus;
     player.hp = player.maxHp;
@@ -2187,8 +2350,7 @@
     }
     seedStars();
     enterZone(1);
-    spawnCivilianIsolate();
-    spawnWorldPickup("offensive", "spread_shot", W * 0.7, H * 0.4, 16);
+    spawnWorldPickup("offensive", "spread_shot", wrapX(player.x + VIEW_W * 0.45), H * 0.4, 16);
     updateHud();
   }
 
@@ -2318,7 +2480,7 @@
     }
 
     if (score >= nextScorePickup) {
-      spawnRandomPickup(clamp(player.x + 120, 40, W - 40), clamp(player.y - 20, 40, GROUND_Y - 40));
+      spawnRandomPickup(wrapX(player.x + 120), clamp(player.y - 20, 40, GROUND_Y - 40));
       nextScorePickup += 2500;
     }
   }
@@ -2434,16 +2596,8 @@
         c.vx = clamp(c.vx, -25, 25);
       }
 
-      c.x += c.vx * dt;
+      c.x = wrapX(c.x + c.vx * dt);
       c.y = GROUND_Y - CIV_H;
-      if (c.x < 10) {
-        c.x = 10;
-        c.vx = Math.abs(c.vx);
-      }
-      if (c.x > W - 20) {
-        c.x = W - 20;
-        c.vx = -Math.abs(c.vx);
-      }
 
       // Touch on ground (or with magnet) → pick up (not instant rescue)
       if (
@@ -2475,21 +2629,15 @@
 
       if (e.type === "rusher") {
         e.x += e.vx * dt;
-        if (e.x < -40 || e.x > W + 40) {
-          enemies.splice(i, 1);
-          continue;
-        }
+        e.x = wrapX(e.x);
       } else if (e.type === "swimmer") {
         e.bob += dt * 3;
         e.x += e.vx * dt;
         e.y = GROUND_Y - 36 + Math.sin(e.bob) * 10;
-        if (e.x < -40 || e.x > W + 40) {
-          enemies.splice(i, 1);
-          continue;
-        }
+        e.x = wrapX(e.x);
       } else if (e.type === "lunger") {
         if (e.state === "stalk") {
-          var lx = player.x - e.x;
+          var lx = wrapDelta(e.x, player.x);
           var ly = player.y - e.y;
           var ll = Math.sqrt(lx * lx + ly * ly) || 1;
           e.x += (lx / ll) * e.speed * dt;
@@ -2503,7 +2651,7 @@
           e.wind += dt;
           if (e.wind >= 1.0) {
             e.state = "lunge";
-            e.vx = (player.x < e.x ? -1 : 1) * (280 + D * 60);
+            e.vx = (wrapDelta(e.x, player.x) < 0 ? -1 : 1) * (280 + D * 60);
             e.vy = (player.y - e.y) * 1.2;
             e.lungeLife = 0.35;
           }
@@ -2516,7 +2664,7 @@
           }
         }
       } else if (e.type === "mutant") {
-        var mx = player.x + player.w * 0.5 - (e.x + e.w * 0.5);
+        var mx = wrapDelta(e.x + e.w * 0.5, player.x + player.w * 0.5);
         var my = player.y + player.h * 0.5 - (e.y + e.h * 0.5);
         var ml = Math.sqrt(mx * mx + my * my) || 1;
         e.x += (mx / ml) * e.speed * dt;
@@ -2526,7 +2674,7 @@
           var tgt = nearestFreeCivilian(e.x, e.y);
           if (tgt) {
             e.targetId = tgt.id;
-            var dx = tgt.x - e.x;
+            var dx = wrapDelta(e.x, tgt.x);
             var dy = tgt.y - e.y;
             var dl = Math.sqrt(dx * dx + dy * dy) || 1;
             e.x += (dx / dl) * e.speed * dt;
@@ -2538,7 +2686,7 @@
               tgt.state = "carried";
             }
           } else {
-            e.x += (player.x < e.x ? -1 : 1) * 40 * dt;
+            e.x += (wrapDelta(e.x, player.x) < 0 ? -1 : 1) * 40 * dt;
           }
         } else if (e.state === "carry" || e.state === "ascend") {
           e.state = "ascend";
@@ -2550,7 +2698,7 @@
           }
           if (e.y < -30) {
             if (carried) {
-              spawnMutant(clamp(e.x, 40, W - 40), 60);
+              spawnMutant(wrapX(e.x), 60);
               metrics.losses += 1;
               rescueStreak = 0;
               var ci;
@@ -2582,20 +2730,14 @@
           });
           e.drip = rand(1.2, 2.0);
         }
-        if (e.x < -50 || e.x > W + 50) {
-          enemies.splice(i, 1);
-          continue;
-        }
+        e.x = wrapX(e.x);
       } else if (e.type === "heat_runner") {
         e.x += e.vx * dt;
         e.y = GROUND_Y - 22;
-        if (e.x < -50 || e.x > W + 50) {
-          enemies.splice(i, 1);
-          continue;
-        }
+        e.x = wrapX(e.x);
       } else if (e.type === "steam_striker") {
         if (e.state === "stalk") {
-          var sx = player.x - e.x;
+          var sx = wrapDelta(e.x, player.x);
           var sy = player.y - e.y;
           var sl = Math.sqrt(sx * sx + sy * sy) || 1;
           e.x += (sx / sl) * e.speed * dt;
@@ -2609,7 +2751,7 @@
           e.wind += dt;
           if (e.wind >= 1.0) {
             e.state = "lunge";
-            e.vx = (player.x < e.x ? -1 : 1) * (260 + D * 50);
+            e.vx = (wrapDelta(e.x, player.x) < 0 ? -1 : 1) * (260 + D * 50);
             e.vy = (player.y - e.y) * 1.1;
             e.lungeLife = 0.32;
           }
@@ -2627,36 +2769,27 @@
         if (e.y < 40 || e.y > GROUND_Y - 40) {
           e.vy *= -1;
         }
-        if (e.x < -50 || e.x > W + 50) {
-          enemies.splice(i, 1);
-          continue;
-        }
+        e.x = wrapX(e.x);
       } else if (e.type === "mirror_clone") {
         if (e.state === "mirror") {
           e.y += (player.y - e.y) * 3 * dt;
           e.mirrorT -= dt;
           if (e.mirrorT <= 0) {
             e.state = "charge";
-            e.vx = (player.x < e.x ? -1 : 1) * e.speed;
+            e.vx = (wrapDelta(e.x, player.x) < 0 ? -1 : 1) * e.speed;
           }
         } else {
           e.x += e.vx * dt;
-          if (e.x < -50 || e.x > W + 50) {
-            enemies.splice(i, 1);
-            continue;
-          }
+          e.x = wrapX(e.x);
         }
       } else if (e.type === "prism_dancer") {
         e.bob += dt * 5;
         e.x += e.vx * dt;
         e.y += Math.sin(e.bob) * 90 * dt;
         e.y = clamp(e.y, 40, GROUND_Y - 40);
-        if (e.x < -50 || e.x > W + 50) {
-          enemies.splice(i, 1);
-          continue;
-        }
+        e.x = wrapX(e.x);
       } else if (e.type === "mutator") {
-        var ux = player.x - e.x;
+        var ux = wrapDelta(e.x, player.x);
         var uy = player.y - e.y;
         var ul = Math.sqrt(ux * ux + uy * uy) || 1;
         e.x += (ux / ul) * e.speed * dt;
@@ -2683,7 +2816,7 @@
           var ct = nearestFreeCivilian(e.x, e.y);
           if (ct) {
             e.targetId = ct.id;
-            var cdx = ct.x - e.x;
+            var cdx = wrapDelta(e.x, ct.x);
             var cdy = ct.y - e.y;
             var cdl = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
             e.x += (cdx / cdl) * e.speed * dt;
@@ -2695,7 +2828,7 @@
               ct.state = "carried";
             }
           } else {
-            e.x += (player.x < e.x ? -1 : 1) * 35 * dt;
+            e.x += (wrapDelta(e.x, player.x) < 0 ? -1 : 1) * 35 * dt;
           }
         } else if (e.state === "ascend") {
           e.y -= e.ascendSpeed * dt;
@@ -2706,7 +2839,7 @@
           }
           if (e.y < -30) {
             if (carriedC) {
-              spawnMutant(clamp(e.x, 40, W - 40), 60);
+              spawnMutant(wrapX(e.x), 60);
               metrics.losses += 1;
               rescueStreak = 0;
               var cii;
@@ -2722,7 +2855,7 @@
           }
         }
       } else if (e.type === "spore_hulk") {
-        var hx = player.x - e.x;
+        var hx = wrapDelta(e.x, player.x);
         var hy = player.y - e.y;
         var hl = Math.sqrt(hx * hx + hy * hy) || 1;
         e.x += (hx / hl) * e.speed * dt;
@@ -2730,11 +2863,11 @@
       } else if (e.type === "phaser") {
         e.blink -= dt;
         if (e.blink <= 0) {
-          e.x = clamp(player.x + rand(-100, 100), 40, W - 40);
+          e.x = wrapX(player.x + rand(-100, 100));
           e.y = clamp(player.y + rand(-60, 60), 40, GROUND_Y - 40);
           e.blink = rand(0.9, 1.6);
         } else {
-          var px = player.x - e.x;
+          var px = wrapDelta(e.x, player.x);
           var py = player.y - e.y;
           var pl = Math.sqrt(px * px + py * py) || 1;
           e.x += (px / pl) * e.speed * 0.35 * dt;
@@ -2743,16 +2876,16 @@
       } else if (e.type === "blinker") {
         e.blink -= dt;
         if (e.blink <= 0) {
-          e.x = clamp(e.x + rand(-140, 140), 40, W - 40);
+          e.x = wrapX(e.x + rand(-140, 140));
           e.y = clamp(e.y + rand(-100, 100), 40, GROUND_Y - 40);
           e.blink = rand(0.5, 1.0);
         }
       } else if (e.type === "void_stalker") {
         e.home += dt;
         if (e.home < 1.2) {
-          e.x += (player.x < e.x ? -1 : 1) * 40 * dt;
+          e.x += (wrapDelta(e.x, player.x) < 0 ? -1 : 1) * 40 * dt;
         } else {
-          var vx = player.x - e.x;
+          var vx = wrapDelta(e.x, player.x);
           var vy = player.y - e.y;
           var vl = Math.sqrt(vx * vx + vy * vy) || 1;
           e.x += (vx / vl) * e.speed * dt;
@@ -2760,6 +2893,7 @@
         }
       }
 
+      e.x = wrapX(e.x);
       if (
         player.dodgeTimer <= 0 &&
         aabb(player.x, player.y, player.w, player.h, e.x, e.y, e.w, e.h)
@@ -2851,7 +2985,7 @@
           }
         }
         if (best) {
-          var hx = best.x + best.w * 0.5 - b.x;
+          var hx = wrapDelta(b.x, best.x + best.w * 0.5);
           var hy = best.y + best.h * 0.5 - b.y;
           var hl = Math.sqrt(hx * hx + hy * hy) || 1;
           b.vx += (hx / hl) * 520 * dt;
@@ -2861,10 +2995,10 @@
           b.vy = (b.vy / sp) * 360;
         }
       }
-      b.x += b.vx * dt;
+      b.x = wrapX(b.x + b.vx * dt);
       b.y += b.vy * dt;
       b.life -= dt;
-      if (b.life <= 0 || b.x < -30 || b.x > W + 30 || b.y < -20 || b.y > H + 20) {
+      if (b.life <= 0 || Math.abs(wrapDelta(camX + VIEW_W * 0.5, b.x)) > VIEW_W * 0.75 || b.y < -20 || b.y > H + 20) {
         bullets.splice(i, 1);
         continue;
       }
@@ -2986,7 +3120,7 @@
     if (spawnCivTimer <= 0) {
       if (civilians.length < civCap) {
         if (Math.random() < 0.45) {
-          spawnCivilianCluster(rand(80, W - 80));
+          spawnCivilianCluster(nearPlayerX(VIEW_W * 2.5));
         } else {
           spawnCivilianIsolate();
         }
@@ -3018,7 +3152,7 @@
     }
     if (spawnPickupTimer <= 0) {
       if (pickups.length < 3) {
-        spawnRandomPickup(rand(80, W - 80), rand(60, GROUND_Y - 80));
+        spawnRandomPickup(nearPlayerX(VIEW_W * 2.5), rand(60, GROUND_Y - 80));
       }
       spawnPickupTimer = rand(7, 12);
     }
@@ -3104,28 +3238,13 @@
       }
     }
 
-    player.x = clamp(player.x, 8, W - player.w - 8);
+    player.x = wrapX(player.x);
     player.y = clamp(player.y, 8, GROUND_Y - player.h - 4);
+    updateCamera();
   }
 
   function updatePlaying(dt) {
-    scrollX += 90 * dt;
     var i;
-    for (i = 0; i < starsFar.length; i++) {
-      starsFar[i].x -= 28 * dt;
-      if (starsFar[i].x < 0) {
-        starsFar[i].x += W;
-        starsFar[i].y = rand(0, H * 0.75);
-      }
-    }
-    for (i = 0; i < starsNear.length; i++) {
-      starsNear[i].x -= 70 * dt;
-      if (starsNear[i].x < 0) {
-        starsNear[i].x += W;
-        starsNear[i].y = rand(0, H * 0.75);
-      }
-    }
-
     updatePlayer(dt);
     updateTelegraphs(dt);
     updateSpawns(dt);
@@ -3143,7 +3262,7 @@
 
   function draw() {
     var i;
-    R.beginFrame(scrollX, zoneVisual());
+    R.beginFrame(camX, zoneVisual());
     R.drawStars(starsFar, starsNear);
     R.drawGround(GROUND_Y);
     if (phase === PHASE_PLAYING) {
@@ -3180,6 +3299,7 @@
     } else {
       R.drawShip(player);
     }
+    drawRadar();
     R.endFrame();
   }
 
@@ -3477,10 +3597,11 @@
 
   syncModeUI();
   instructionsEl.textContent =
-    "WASD/arrows · Space/Z fire · Shift/X dodge · carry 1 civilian · set down low to rescue.";
+    "WASD/arrows · Space/Z fire · Shift/X dodge · 10-screen wrap zone · radar · carry 1 · set down low to rescue.";
   seedStars();
-  player.x = W * 0.2;
+  player.x = MAP_W * 0.1;
   player.y = H * 0.45;
+  updateCamera();
   setOverlayButtons(true, false);
   setStartScreenExtras(true);
   showOverlay("SL DEFENDER", "Rescue under pressure · Seven zones · Infinite run");

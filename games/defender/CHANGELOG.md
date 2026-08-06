@@ -1,5 +1,12 @@
 # SL Defender — Changelog
 
+## v1.8 — Classic Defender wraparound world + radar
+
+- World is 10 screens wide (`MAP_W = 10 × 960`) with seamless horizontal wrap
+- Camera follows the player (centered); parallax + ground scroll from `camX`
+- Civilians / enemies / hazards live in world X; collisions use wrap-aware AABB
+- Bottom RADAR shows full zone: player, survivors, enemies, hazards, boss, view window
+
 ## v1.7 — True side-view ships
 
 - Replaced Kenney top-down ships (rotated) with OpenGameArt “Space Ships (side scroller)” true side profiles
